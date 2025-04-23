@@ -1,0 +1,31 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "dragonhorde/creator",
+    "title": "Creator",
+    "description": "An Creator",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+        },
+        "name": {
+            "type": "string"
+        },
+        "aliases": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "sites": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "uri"
+            }
+        }
+    },
+    "required": ["name"]
+}

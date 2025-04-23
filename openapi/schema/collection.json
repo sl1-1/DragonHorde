@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "dragonhorde/collection",
+    "title": "Collection",
+    "description": "A collection of media",
+    "type": "object",
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "uuid",
+            "readOnly": true
+        },
+        "name": {
+            "type": "string"
+        },
+        "description": {
+            "type": "string"
+        },
+        "media": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "uri"
+            }
+        }
+    },
+    "required": ["name"]
+}

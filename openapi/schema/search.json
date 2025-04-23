@@ -1,0 +1,72 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "dragonhorde/search",
+    "title": "Search Query",
+    "description": "A Search Query",
+    "type": "object",
+    "properties": {
+        "title": {
+            "type": "string"
+        },
+        "tags": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            },
+            "description": "Match tag in all tag groups"
+        },
+        "tagGroups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "group": {
+                        "type": "string"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items":{
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "description": "Match tags in specific groups"
+        },
+        "uploaded": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "to": {
+                    "type": "string",
+                    "format": "date-time"
+                }              
+            }
+        },
+        "created": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "to": {
+                    "type": "string",
+                    "format": "date-time"
+                }              
+            }
+        },
+        "collection": {
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Search within a collection"
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,603 @@
+openapi: "3.0.3"
+info:
+  title: DragonHorde
+  version: "1.0"
+servers:
+  - url: https://api.server.test/v1
+paths:
+  /media:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/media.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/media.json"
+      tags:
+        - media
+  /media/{id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/media.json"
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media               
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/media.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/media.json"
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media                
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media
+      responses:
+        "200":
+          description: OK
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /media/{id}/thumbnail:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media thumbnail
+      responses:
+        "200":
+          description: OK
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /media/{id}/file:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media thumbnail
+      responses:
+        "200":
+          description: OK
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /media/{id}/tags:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media tags
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: tag
+          schema:
+            type: string
+          required: true
+          description: tag to add
+        - in: query
+          name: group
+          schema:
+            type: string
+          required: true
+          description: group of tag to add
+      responses:
+        "201":
+          description: Added
+        "404":
+          description: Not Found
+        "409":
+          description: Already Exists
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: tag
+          schema:
+            type: string
+          required: true
+          description: tag to add
+        - in: query
+          name: group
+          schema:
+            type: string
+          required: true
+          description: group of tag to add
+      responses:
+        "200":
+          description: Added
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /media/{id}/creator:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media tags
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: creator
+          schema:
+            type: string
+          required: true
+          description: tag to add
+      responses:
+        "201":
+          description: Added
+        "404":
+          description: Not Found
+        "409":
+          description: Already Exists
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: creator
+          schema:
+            type: string
+          required: true
+          description: tag to add
+      responses:
+        "200":
+          description: Added
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /media/{id}/sources:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of requested media tags
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: source
+          schema:
+            type: string
+          required: true
+          description: tag to add
+      responses:
+        "201":
+          description: Added
+        "404":
+          description: Not Found
+        "409":
+          description: Already Exists
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: ID of media to add tags to
+        - in: query
+          name: source
+          schema:
+            type: string
+          required: true
+          description: tag to add
+      responses:
+        "200":
+          description: Added
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
+  /collection:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/collection.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/collection.json"
+      tags:
+        - collection
+  /collection/{id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of requested collection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/collection.json"
+      tags:
+        - collection
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of collection to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/collection.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/collection.json"
+      tags:
+        - collection
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of requested collection
+      responses:
+        "200":
+          description: OK
+      tags:
+        - collection
+  /creator:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/creator.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/creator.json"
+      tags:
+        - creator
+  /creator/{id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of requested creator
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/creator.json"
+      tags:
+        - creator
+    put:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of creator to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/creator.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/creator.json"
+      tags:
+        - creator
+    delete:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: UUID of creator to delete
+      responses:
+        "200":
+          description: OK
+      tags:
+        - creator
+  /tagGroup:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/tagGroup.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/tagGroup.json"
+      tags:
+        - tagGroup
+  /tagGroup/{name}:
+    get:
+      parameters:
+        - in: path
+          name: name
+          schema:
+            type: string
+          required: true
+          description: Name of requested tagGroup
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/tagGroup.json"
+      tags:
+        - tagGroup
+    put:
+      parameters:
+        - in: path
+          name: name
+          schema:
+            type: string
+          required: true
+          description: Name of tagGroup to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/tagGroup.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/tagGroup.json"
+      tags:
+        - tagGroup
+    delete:
+      parameters:
+        - in: path
+          name: name
+          schema:
+            type: string
+          required: true
+          description: Name of tagGroup to delete
+      responses:
+        "200":
+          description: OK
+      tags:
+        - tagGroup
+  /search:
+    get:
+      parameters:
+        - in: query
+          name: filter
+          schema:
+            $ref: "schema/search.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "schema/media.json"
+      tags:
+        - search

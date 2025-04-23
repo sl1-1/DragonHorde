@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dragonhorde/media",
+  "title": "Media",
+  "description": "A piece of media",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "integer",
+      "readOnly": true
+    },
+    "storage_uri": {
+      "type": "string",
+      "format": "uri",
+      "description": "Media Location"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "perceptual_hash": {
+      "type": "string"
+    },
+    "uploaded": {
+      "type": "string",
+      "format": "date-time",
+      "description": "date-time the media was uploaded to this instance",
+      "readOnly": true
+    },
+    "created": {
+      "type": "string",
+      "format": "date-time",
+      "description": "date-time the media was created"
+    },
+    "title": {
+      "type": "string"
+    },
+    "creators": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tag_groups": {
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "collections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
