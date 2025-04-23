@@ -1,0 +1,47 @@
+services:
+  dragonhorde:
+    build:
+      dockerfile: Dockerfile
+    volumes:
+      - ../..:/workspaces:cached
+
+    # Overrides default command so things don't shut down after the process ends.
+    command: sleep infinity
+
+    # Runs app on the same network as the database container, allows "forwardPorts" in devcontainer.json function.
+    network_mode: service:postgres
+#    ports:
+#      - "8080:8080"
+    # Use "forwardPorts" in **devcontainer.json** to forward an app port locally. 
+    # (Adding the "ports" property to this file will not forward from a Codespace.)
+#    environment:
+#      - .env
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres
+    restart: unless-stopped
+    volumes:
+      - psql-data:/tmp/dev/pgsql/data
+    env_file:
+      - .env
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    env_file:
+      - .env
+    volumes:
+      - pga-data:/tmp/dev/pga/data
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  psql-data:
+  pga-data:
