@@ -1,0 +1,23 @@
+[package]
+name = "Server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+entity = { path = "entity" }
+axum = { version = "0.8.3", features = ["multipart", "macros"] }
+sea-orm = { version = "1.1.10", features = [ 'sqlx-postgres', 'runtime-tokio-rustls', "macros" ] }
+tokio = { version = "1.44.2", features = ["full"] }
+tracing-subscriber = "0.3.19"
+anyhow = "1.0.98"
+dotenvy = "0.15.7"
+tower-http = { version = "0.6.2", features = ["trace", "fs"] }
+tracing = "0.1.41"
+sha2 = "0.10.8"
+infer = "0.19.0"
+serde = "1.0.219"
+serde_json = "1.0.140"
+serde_with = "3.12.0"
+itertools = "0.14.0"
+img_hash = "3.2.0"
+image = "0.23.14"
