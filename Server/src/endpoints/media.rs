@@ -57,7 +57,7 @@ impl Default for DataMap {
 
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromQueryResult, FromJsonQueryResult)]
-pub struct MediaSelectResult2 {
+pub struct ApiMedia {
     pub id: Option<i64>,
     pub storage_uri: Option<String>,
     pub sha256: Option<String>,
@@ -79,17 +79,17 @@ pub struct MediaSelectResult2 {
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
-    pub result: Vec<MediaSelectResult2>,
+    pub result: Vec<ApiMedia>,
 }
 
-async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<MediaSelectResult2, AppError> {
+async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
     let found_media = Media::find()
         .from_raw_sql(Statement::from_sql_and_values(
             DbBackend::Postgres,
             queries::MEDIA_QUERY_ID,
             vec![id.into()],
         ))
-        .into_model::<MediaSelectResult2>()
+        .into_model::<ApiMedia>()
         .one(db)
         .await?;
     Ok(found_media.expect("Media not found"))
@@ -104,7 +104,7 @@ pub async fn get_media(
             DbBackend::Postgres,
             queries::MEDIA_QUERY,
         ))
-        .into_model::<MediaSelectResult2>()
+        .into_model::<ApiMedia>()
         .paginate(&state.conn, pagination.per_page.unwrap_or_else(|| 50u64))
         .fetch_page(pagination.page.unwrap_or_else(|| 0))
         .await?;
@@ -118,7 +118,7 @@ pub async fn get_media(
 }
 
 async fn media_update(
-    payload: MediaSelectResult2,
+    payload: ApiMedia,
     new_model: &media::Model,
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
@@ -142,8 +142,8 @@ async fn media_update(
 pub async fn post_media(
     state: State<AppState>,
     mut multipart: extract::Multipart,
-) -> Result<(StatusCode, Json<Option<MediaSelectResult2>>), AppError> {
-    let mut payload_option: Option<MediaSelectResult2> = None;
+) -> Result<(StatusCode, Json<Option<ApiMedia>>), AppError> {
+    let mut payload_option: Option<ApiMedia> = None;
     let mut file_option: Option<Vec<u8>> = None;
 
     //Unpack the multipart form into the metadata and file
@@ -238,8 +238,8 @@ pub async fn post_media(
 pub async fn update_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
-    Json(payload): Json<MediaSelectResult2>,
-) -> Result<(StatusCode, Json<MediaSelectResult2>), AppError> {
+    Json(payload): Json<ApiMedia>,
+) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
 
@@ -268,7 +268,7 @@ pub async fn update_media_item(
 pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
-) -> Result<(StatusCode, Json<MediaSelectResult2>), AppError> {
+) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
     Ok((
         StatusCode::OK,
         Json(load_media_item(id, &state.conn).await?),
