@@ -73,6 +73,7 @@ pub struct MediaSelectResult2 {
     pub collections: DataVector,
     #[serde(default)]
     pub tag_groups: DataMap,
+    pub description: Option<String>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -208,6 +209,7 @@ pub async fn post_media(
         created: Set(payload.created.clone()),
         title: Set(payload.title.clone()),
         r#type: Set(Some(image_format)),
+        description: Set(payload.description.clone()),
         ..Default::default()
     };
 
@@ -246,6 +248,7 @@ pub async fn update_media_item(
         perceptual_hash: Set(payload.perceptual_hash.clone()),
         created: Set(payload.created.clone()),
         title: Set(payload.title.clone()),
+        description: Set(payload.description.clone()),
         ..Default::default()
     })
     .exec(&state.conn)
