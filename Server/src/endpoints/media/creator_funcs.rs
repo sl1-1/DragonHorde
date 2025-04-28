@@ -12,50 +12,58 @@ pub async fn creators_insert(
     id: i64,
     db: &DatabaseTransaction,
 ) -> Result<Vec<media_creators::Model>, AppError> {
-    let creators_to_insert: Vec<creators::ActiveModel> = creators_in
-        .into_iter()
-        .map(|s| creators::ActiveModel {
-            name: Set(s),
-            ..Default::default()
-        })
-        .collect();
-    let creators_inserted = Creators::insert_many(creators_to_insert)
-        .on_conflict(
-            OnConflict::column(creators::Column::Name)
-                .update_column(creators::Column::Name)
-                .to_owned(),
-        )
-        .exec_with_returning_many(db)
-        .await?;
-    let creators_relations: Vec<media_creators::ActiveModel> = creators_inserted
-        .into_iter()
-        .map(|c| media_creators::ActiveModel {
-            media_id: Set(id),
-            creator_id: Set(c.id),
-        })
-        .collect();
-    dbg!(&creators_relations);
-    Ok(MediaCreators::insert_many(creators_relations)
-        .on_conflict(
-            OnConflict::columns([
-                media_creators::Column::MediaId,
-                media_creators::Column::CreatorId,
-            ])
-            .do_nothing()
-            .to_owned(),
-        )
-        .exec_with_returning_many(db)
-        .await?)
+    let mut creators_in = creators_in.clone();
+    creators_in.sort();
+    creators_in.dedup();
+    if !creators_in.is_empty(){
+        let creators_to_insert: Vec<creators::ActiveModel> = creators_in
+            .into_iter()
+            .map(|s| creators::ActiveModel {
+                name: Set(s),
+                ..Default::default()
+            })
+            .collect();
+        let creators_inserted = Creators::insert_many(creators_to_insert)
+            .on_conflict(
+                OnConflict::column(creators::Column::Name)
+                    .update_column(creators::Column::Name)
+                    .to_owned(),
+            )
+            .exec_with_returning_many(db)
+            .await?;
+        let creators_relations: Vec<media_creators::ActiveModel> = creators_inserted
+            .into_iter()
+            .map(|c| media_creators::ActiveModel {
+                media_id: Set(id),
+                creator_id: Set(c.id),
+            })
+            .collect();
+        dbg!(&creators_relations);
+        Ok(MediaCreators::insert_many(creators_relations)
+            .on_conflict(
+                OnConflict::columns([
+                    media_creators::Column::MediaId,
+                    media_creators::Column::CreatorId,
+                ])
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec_with_returning_many(db)
+            .await?)
+    } else {
+        Ok(Vec::new())
+    }
+
 }
 
 pub async fn creator_delete(
-    creators_in: Option<Vec<String>>,
+    creators_in: Vec<String>,
     id: i64,
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     let out = MediaCreators::find()
         .join(JoinType::LeftJoin, media_creators::Relation::Creators.def())
-        .filter(creators::Column::Name.is_not_in(creators_in.unwrap_or_else(|| vec![])))
+        .filter(creators::Column::Name.is_not_in(creators_in))
         .filter(media_creators::Column::MediaId.eq(id))
         .all(db)
         .await?;

@@ -4,278 +4,143 @@ mod tag_funcs;
 
 pub use tag_funcs::{media_add_tag, media_delete_tag, media_get_tags};
 
-use crate::AppState;
 use crate::endpoints::media::creator_funcs::{creator_delete, creators_insert};
 use crate::endpoints::media::source_funcs::{sources_delete, sources_insert};
 use crate::error::AppError;
+use crate::{AppState, queries};
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, extract};
-use entity::media_collection;
-use entity::media_creators;
-use entity::media_tags;
-use entity::sources;
-use entity::tag_groups;
-use entity::tags;
-use entity::{collections, creators};
 use entity::{media, media::Entity as Media};
-use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, FromQueryResult, IntoActiveModel, JoinType, QuerySelect, RelationTrait, SelectColumns, Set, TransactionTrait};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
-use std::io::{Cursor, Write};
 use img_hash::HashAlg::Gradient;
 use img_hash::HasherConfig;
+use sea_orm::prelude::DateTimeWithTimeZone;
+use sea_orm::{
+    ActiveModelTrait, DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
+    FromJsonQueryResult, FromQueryResult, PaginatorTrait, Set, Statement, TransactionTrait,
+};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
 
-#[derive(Debug, Deserialize, FromQueryResult)]
-pub struct MediaSelectResult {
-    pub id: i64,
+#[derive(Deserialize)]
+pub struct Pagination {
+    page: Option<u64>,
+    per_page: Option<u64>,
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
+)]
+pub struct DataVector(pub Vec<String>);
+impl Default for DataVector {
+    fn default() -> Self {
+        DataVector(Vec::new())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult)]
+pub struct DataMap(pub BTreeMap<String, Vec<String>>);
+
+impl Default for DataMap {
+    fn default() -> Self {
+        DataMap(BTreeMap::default())
+    }
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromQueryResult, FromJsonQueryResult)]
+pub struct MediaSelectResult2 {
+    pub id: Option<i64>,
     pub storage_uri: Option<String>,
     pub sha256: Option<String>,
     pub perceptual_hash: Option<String>,
     pub uploaded: Option<DateTimeWithTimeZone>,
     pub created: Option<DateTimeWithTimeZone>,
     pub title: Option<String>,
-    pub creator: Option<String>,
-    pub group: Option<String>,
-    pub tag: Option<String>,
-    pub source: Option<String>,
-    pub collection: Option<String>,
+    #[serde(default)]
+    pub creators: DataVector,
+    #[serde(default)]
+    pub sources: DataVector,
+    #[serde(default)]
+    pub collections: DataVector,
+    #[serde(default)]
+    pub tag_groups: DataMap,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MediaSchema {
-    // #[serde(skip_deserializing)]
-    pub id: Option<i64>,
-    #[serde(skip_deserializing)]
-    pub storage_uri: Option<String>,
-    #[serde(skip_deserializing)]
-    pub sha256: Option<String>,
-    pub perceptual_hash: Option<String>,
-    #[serde(skip_deserializing)]
-    pub uploaded: Option<DateTimeWithTimeZone>,
-    pub created: Option<DateTimeWithTimeZone>,
-    pub title: Option<String>,
-    pub tag_groups: Option<HashMap<String, Vec<String>>>,
-    pub creators: Option<Vec<String>>,
-    pub sources: Option<Vec<String>>,
-    pub collections: Option<Vec<String>>,
+pub struct SearchResult {
+    pub result: Vec<MediaSelectResult2>,
 }
 
-impl From<media::Model> for MediaSchema {
-    fn from(value: media::Model) -> Self {
-        MediaSchema {
-            id: Some(value.id),
-            storage_uri: Some(value.storage_uri),
-            sha256: Some(value.sha256),
-            perceptual_hash: value.perceptual_hash,
-            uploaded: Some(value.uploaded),
-            created: value.created,
-            title: value.title,
-            tag_groups: None,
-            creators: None,
-            sources: None,
-            collections: None,
-        }
-    }
-}
-
-mod update_model {
-    use crate::endpoints::media::MediaSchema;
-    use crate::endpoints::media::media::ActiveModel;
-    use sea_orm::DeriveIntoActiveModel;
-    use sea_orm::prelude::DateTimeWithTimeZone;
-
-    #[derive(Debug, DeriveIntoActiveModel)]
-    pub struct MediaschemaToActive {
-        // pub id: i64,
-        pub perceptual_hash: Option<String>,
-        pub created: Option<DateTimeWithTimeZone>,
-        pub title: Option<String>,
-    }
-    impl From<MediaSchema> for MediaschemaToActive {
-        fn from(value: MediaSchema) -> Self {
-            MediaschemaToActive {
-                perceptual_hash: value.perceptual_hash,
-                created: value.created,
-                title: value.title,
-            }
-        }
-    }
-}
-
-impl From<Vec<MediaSelectResult>> for MediaSchema {
-    fn from(value: Vec<MediaSelectResult>) -> Self {
-        let mut creators: Vec<String> = Vec::new();
-        let mut sources: Vec<String> = Vec::new();
-        let mut collections: Vec<String> = Vec::new();
-        let mut taggroups: HashMap<String, Vec<String>> = HashMap::new();
-        for i in &value {
-            match &i.creator {
-                Some(creator) => {
-                    if !creators.contains(&creator) {
-                        creators.push(creator.clone());
-                    }
-                }
-                None => {}
-            }
-            match &i.group {
-                Some(group) => match taggroups.get_mut(group) {
-                    Some(tags) => {
-                        tags.push(i.tag.clone().unwrap());
-                    }
-                    None => {
-                        taggroups.insert(group.clone(), vec![i.tag.clone().unwrap()]);
-                    }
-                },
-                None => {}
-            }
-            match &i.source {
-                Some(source) => {
-                    if !sources.contains(&source) {
-                        sources.push(source.clone());
-                    }
-                }
-                None => {}
-            }
-            match &i.collection {
-                Some(collection) => {
-                    if !collections.contains(&collection) {
-                        collections.push(collection.clone());
-                    }
-                }
-                None => {}
-            }
-        }
-        MediaSchema {
-            id: Some(value[0].id),
-            storage_uri: value[0].storage_uri.clone(),
-            sha256: value[0].sha256.clone(),
-            perceptual_hash: value[0].perceptual_hash.clone(),
-            uploaded: value[0].uploaded,
-            created: value[0].created,
-            title: value[0].title.clone(),
-            tag_groups: Some(taggroups),
-            creators: Some(creators),
-            sources: Some(sources),
-            collections: Some(collections),
-        }
-    }
-}
-
-async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<MediaSchema, AppError> {
-    let found_media = Media::find_by_id(id)
-        .join(JoinType::LeftJoin, media::Relation::Sources.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaTags.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaCollection.def())
-        .join(JoinType::LeftJoin, media_tags::Relation::Tags.def())
-        .join(JoinType::LeftJoin, tags::Relation::TagGroups.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaCreators.def())
-        .join(JoinType::LeftJoin, media_creators::Relation::Creators.def())
-        .join(
-            JoinType::LeftJoin,
-            media_collection::Relation::Collections.def(),
-        )
-        .select_column_as(tag_groups::Column::Name, "group")
-        .select_column_as(collections::Column::Name, "collection")
-        .select_column(tags::Column::Tag)
-        .select_column(sources::Column::Source)
-        .select_column_as(creators::Column::Name, "creator")
-        .into_model::<MediaSelectResult>()
-        .all(db)
+async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<MediaSelectResult2, AppError> {
+    let found_media = Media::find()
+        .from_raw_sql(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            queries::MEDIA_QUERY_ID,
+            vec![id.into()],
+        ))
+        .into_model::<MediaSelectResult2>()
+        .one(db)
         .await?;
-    Ok(MediaSchema::from(found_media))
+    Ok(found_media.expect("Media not found"))
 }
 
 pub async fn get_media(
     state: State<AppState>,
-) -> Result<(StatusCode, Json<Vec<MediaSchema>>), AppError> {
+    pagination: Query<Pagination>,
+) -> Result<(StatusCode, Json<SearchResult>), AppError> {
     let found_media = Media::find()
-        .join(JoinType::LeftJoin, media::Relation::Sources.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaTags.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaCollection.def())
-        .join(JoinType::LeftJoin, media_tags::Relation::Tags.def())
-        .join(JoinType::LeftJoin, tags::Relation::TagGroups.def())
-        .join(JoinType::LeftJoin, media::Relation::MediaCreators.def())
-        .join(JoinType::LeftJoin, media_creators::Relation::Creators.def())
-        .join(
-            JoinType::LeftJoin,
-            media_collection::Relation::Collections.def(),
-        )
-        .select_column_as(tag_groups::Column::Name, "group")
-        .select_column_as(collections::Column::Name, "collection")
-        .select_column(tags::Column::Tag)
-        .select_column(sources::Column::Source)
-        .select_column_as(creators::Column::Name, "creator")
-        .into_model::<MediaSelectResult>()
-        .all(&state.conn)
+        .from_raw_sql(Statement::from_string(
+            DbBackend::Postgres,
+            queries::MEDIA_QUERY,
+        ))
+        .into_model::<MediaSelectResult2>()
+        .paginate(&state.conn, pagination.per_page.unwrap_or_else(|| 50u64))
+        .fetch_page(pagination.page.unwrap_or_else(|| 0))
         .await?;
-
-    let mut found_media_by_id: BTreeMap<i64, Vec<MediaSelectResult>> = BTreeMap::new();
-    for item in found_media {
-        match found_media_by_id.get_mut(&item.id) {
-            Some(i) => {
-                i.push(item);
-            }
-            None => {
-                found_media_by_id.insert(item.id, vec![item]);
-            }
-        }
-    }
 
     Ok((
         StatusCode::OK,
-        Json(
-            found_media_by_id
-                .into_iter()
-                .map(|m| MediaSchema::from(m.1))
-                .collect(),
-        ),
+        Json(SearchResult {
+            result: found_media,
+        }),
     ))
 }
 
 async fn media_update(
-    payload: MediaSchema,
+    payload: MediaSelectResult2,
     new_model: &media::Model,
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     // Handle Tag Groups and Tags
-    if let Some(new_tag_groups) = payload.tag_groups {
-        let tag_tuple = tag_funcs::groups_to_tuple(&new_tag_groups);
-
+    let tag_tuple = tag_funcs::groups_to_tuple(&payload.tag_groups.0);
+    if !tag_tuple.is_empty() {
         let new_groups = tag_funcs::tag_group_insert(&tag_tuple, db).await?;
-
         let inserted_tags = tag_funcs::tags_insert(&tag_tuple, &new_groups, db).await?;
-
         tag_funcs::tags_insert_relations(new_model.id, inserted_tags, db).await?;
-
-        tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
     }
+    tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
 
-    if let Some(creators_in) = &payload.creators {
-        dbg!(&creators_in);
-        creators_insert(creators_in.clone(), new_model.id, db).await?;
-    }
-    creator_delete(payload.creators, new_model.id, db).await?;
+    creators_insert(payload.creators.0.clone(), new_model.id, db).await?;
+    creator_delete(payload.creators.0, new_model.id, db).await?;
 
-    if let Some(sources_in) = &payload.sources {
-        sources_insert(sources_in.clone(), new_model.id, db).await?;
-    }
-    sources_delete(payload.sources, new_model.id, db).await?;
+    sources_insert(payload.sources.0.clone(), new_model.id, db).await?;
+    sources_delete(payload.sources.0, new_model.id, db).await?;
     Ok(())
 }
 
 pub async fn post_media(
     state: State<AppState>,
     mut multipart: extract::Multipart,
-) -> Result<(StatusCode, Json<Option<MediaSchema>>), AppError> {
-    let mut payload_option: Option<MediaSchema> = None;
+) -> Result<(StatusCode, Json<Option<MediaSelectResult2>>), AppError> {
+    let mut payload_option: Option<MediaSelectResult2> = None;
     let mut file_option: Option<Vec<u8>> = None;
 
     //Unpack the multipart form into the metadata and file
@@ -290,7 +155,7 @@ pub async fn post_media(
         }
     }
 
-    let payload = match payload_option {
+    let mut payload = match payload_option {
         Some(payload) => payload,
         None => return Ok((StatusCode::BAD_REQUEST, Json(None))),
     };
@@ -300,19 +165,20 @@ pub async fn post_media(
         None => return Ok((StatusCode::BAD_REQUEST, Json(None))),
     };
 
+    if payload.perceptual_hash.is_none() {
+        let reader = image::io::Reader::new(Cursor::new(&file)).with_guessed_format()?;
+        let im = reader.decode()?;
 
-    let reader = image::io::Reader::new(Cursor::new(&file)).with_guessed_format()?;
-    let im = reader.decode()?;
-
-    let image_hash =
-        HasherConfig::with_bytes_type::<[u8; 8]>()
+        let image_hash = HasherConfig::with_bytes_type::<[u8; 8]>()
             .hash_alg(Gradient)
             .hash_size(8, 8)
             .preproc_dct()
             .to_hasher()
             .hash_image(&im);
-    let hash: [u8; 8] = image_hash.as_bytes().try_into()?;
-    let phash = i64::from_be_bytes(hash);
+        let hash: [u8; 8] = image_hash.as_bytes().try_into()?;
+        let phash = i64::from_be_bytes(hash);
+        payload.perceptual_hash = Some(format!("{:x}", phash))
+    }
 
     //Hash
     let mut hasher = Sha256::new();
@@ -332,9 +198,10 @@ pub async fn post_media(
     let new_item: media::ActiveModel = media::ActiveModel {
         storage_uri: Set(file_name.to_string_lossy().to_string()),
         sha256: Set(format!("{:x}", hash)),
-        perceptual_hash: Set(Some(format!("{:x}", phash))),
+        perceptual_hash: Set(payload.perceptual_hash.clone()),
         created: Set(payload.created.clone()),
         title: Set(payload.title.clone()),
+        r#type: Set(Some(kind.extension().to_string())),
         ..Default::default()
     };
 
@@ -357,18 +224,20 @@ pub async fn post_media(
 pub async fn update_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
-    Json(payload): Json<MediaSchema>,
-) -> Result<(StatusCode, Json<MediaSchema>), AppError> {
-    let mut active_model =
-        update_model::MediaschemaToActive::from(payload.clone()).into_active_model();
-    active_model.id = Set(id);
-
+    Json(payload): Json<MediaSelectResult2>,
+) -> Result<(StatusCode, Json<MediaSelectResult2>), AppError> {
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
 
-    let new_model = Media::update(active_model.into_active_model())
-        .exec(&state.conn)
-        .await?;
+    let new_model = Media::update(media::ActiveModel {
+        id: Set(id),
+        perceptual_hash: Set(payload.perceptual_hash.clone()),
+        created: Set(payload.created.clone()),
+        title: Set(payload.title.clone()),
+        ..Default::default()
+    })
+    .exec(&state.conn)
+    .await?;
 
     media_update(payload, &new_model, &txn).await?;
 
@@ -384,7 +253,7 @@ pub async fn update_media_item(
 pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
-) -> Result<(StatusCode, Json<MediaSchema>), AppError> {
+) -> Result<(StatusCode, Json<MediaSelectResult2>), AppError> {
     Ok((
         StatusCode::OK,
         Json(load_media_item(id, &state.conn).await?),

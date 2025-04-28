@@ -1,5 +1,5 @@
 use sea_orm::{FromQueryResult, QueryFilter, RelationTrait};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
@@ -20,7 +20,7 @@ pub struct TagEntity {
 }
 
 
-pub fn groups_to_tuple(tags_in: &HashMap<String, Vec<String>>) -> Vec<(String, String)> {
+pub fn groups_to_tuple(tags_in: &BTreeMap<String, Vec<String>>) -> Vec<(String, String)> {
     tags_in
         .iter()
         .map(|tg| -> Vec<(String, String)> {
@@ -40,28 +40,35 @@ pub async fn tag_group_insert(
         .into_iter()
         .map(|i| i.0)
         .collect();
+    deduped_groups.sort();
     deduped_groups.dedup();
-    let tg: Vec<tag_groups::ActiveModel>;
-    tg = deduped_groups
-        .clone()
-        .into_iter()
-        .map(|i| tag_groups::ActiveModel {
-            name: Set(i),
-            ..Default::default()
-        })
-        .collect();
+    if !deduped_groups.is_empty() {
+        dbg!(&deduped_groups);
+        let tg: Vec<tag_groups::ActiveModel>;
+        tg = deduped_groups
+            .clone()
+            .into_iter()
+            .map(|i| tag_groups::ActiveModel {
+                name: Set(i),
+                ..Default::default()
+            })
+            .collect();
 
-    //Not sure if doing an insert here is correct, or if existence should be checked first
-    let ret = TagGroups::insert_many(tg)
-        .on_conflict(
-            OnConflict::column(tag_groups::Column::Name)
-                .update_column(tag_groups::Column::Name)
-                .to_owned(),
-        )
-        .exec_with_returning_many(db)
-        .await?;
+        //Not sure if doing an insert here is correct, or if existence should be checked first
+        let ret = TagGroups::insert_many(tg)
+            .on_conflict(
+                OnConflict::column(tag_groups::Column::Name)
+                    .update_column(tag_groups::Column::Name)
+                    .to_owned(),
+            )
+            .exec_with_returning_many(db)
+            .await?;
 
-    Ok(ret.iter().map(|tg| (tg.name.clone(), tg.id)).collect())
+        Ok(ret.iter().map(|tg| (tg.name.clone(), tg.id)).collect())
+    }
+    else {
+        Ok(HashMap::new())
+    }
 }
 
 /// Insert any new tags, and return a vector of the respective models of both new and old tag groups

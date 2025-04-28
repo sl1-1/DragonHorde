@@ -6,6 +6,33 @@ servers:
   - url: https://api.server.test/v1
 paths:
   /media:
+    get:
+      parameters:
+        - in: query
+          name: page
+          schema:
+            type: integer
+          required: false
+          description: page
+        - in: query
+          name: page
+          schema:
+            type: integer
+          required: false
+          description: page
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                results:
+                  type: array
+                  items:
+                    $ref: "schema/media.json"
+      tags:
+        - media
     post:
       requestBody:
         required: true
@@ -28,7 +55,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media
       responses:
@@ -49,7 +76,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media
       requestBody:
@@ -76,7 +103,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media
       responses:
@@ -94,7 +121,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media thumbnail
       responses:
@@ -117,7 +144,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media thumbnail
       responses:
@@ -126,7 +153,7 @@ paths:
           content:
             image/*:
               schema:
-                type: string
+                type: integer
                 format: binary
         "404":
           description: Not Found
@@ -140,7 +167,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media tags
       responses:
@@ -165,7 +192,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query
@@ -196,7 +223,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query
@@ -226,7 +253,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media tags
       responses:
@@ -249,7 +276,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query
@@ -274,7 +301,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query
@@ -298,7 +325,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of requested media tags
       responses:
@@ -321,7 +348,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query
@@ -346,7 +373,7 @@ paths:
         - in: path
           name: id
           schema:
-            type: string
+            type: integer
           required: true
           description: ID of media to add tags to
         - in: query

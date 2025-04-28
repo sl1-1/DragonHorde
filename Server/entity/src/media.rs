@@ -14,6 +14,9 @@ pub struct Model {
     pub uploaded: DateTimeWithTimeZone,
     pub created: Option<DateTimeWithTimeZone>,
     pub title: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub description: Option<String>,
+    pub r#type: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

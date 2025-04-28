@@ -1,5 +1,6 @@
 mod endpoints;
 pub mod error;
+mod queries;
 
 use axum::Router;
 use axum::routing::get;
@@ -42,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route(
-            "/v1/media/",
+            "/v1/media",
             get(endpoints::media::get_media).post(endpoints::media::post_media),
         )
         .route(

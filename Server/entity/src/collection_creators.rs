@@ -19,7 +19,7 @@ pub enum Relation {
         from = "Column::CollectionId",
         to = "super::collections::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     Collections,
     #[sea_orm(
@@ -27,7 +27,7 @@ pub enum Relation {
         from = "Column::CreatorId",
         to = "super::creators::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     Creators,
 }
