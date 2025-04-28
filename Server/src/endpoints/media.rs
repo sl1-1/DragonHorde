@@ -14,6 +14,8 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, extract};
 use entity::{media, media::Entity as Media};
+use image::ImageReader;
+use image::imageops::Lanczos3;
 use img_hash::HashAlg::Gradient;
 use img_hash::HasherConfig;
 use sea_orm::prelude::DateTimeWithTimeZone;
@@ -165,10 +167,16 @@ pub async fn post_media(
         None => return Ok((StatusCode::BAD_REQUEST, Json(None))),
     };
 
+    let reader = ImageReader::new(Cursor::new(&file)).with_guessed_format()?;
+    let image_format = reader
+        .format()
+        .expect("Image Format")
+        .extensions_str()
+        .first()
+        .unwrap()
+        .to_string();
+    let im = reader.decode()?;
     if payload.perceptual_hash.is_none() {
-        let reader = image::io::Reader::new(Cursor::new(&file)).with_guessed_format()?;
-        let im = reader.decode()?;
-
         let image_hash = HasherConfig::with_bytes_type::<[u8; 8]>()
             .hash_alg(Gradient)
             .hash_size(8, 8)
@@ -186,11 +194,9 @@ pub async fn post_media(
     let hash = hasher.finalize();
     println!("{:x}", hash);
 
-    let kind = infer::get(&file).expect("file type is known");
-
     let mut file_name: std::path::PathBuf = std::path::PathBuf::new();
     file_name.set_file_name(format!("{:x}", hash));
-    file_name.set_extension(kind.extension());
+    file_name.set_extension(&image_format);
 
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
@@ -201,7 +207,7 @@ pub async fn post_media(
         perceptual_hash: Set(payload.perceptual_hash.clone()),
         created: Set(payload.created.clone()),
         title: Set(payload.title.clone()),
-        r#type: Set(Some(kind.extension().to_string())),
+        r#type: Set(Some(image_format)),
         ..Default::default()
     };
 
@@ -211,6 +217,12 @@ pub async fn post_media(
 
     let mut out = File::create_new(state.storage_dir.clone().join(file_name))?;
     out.write_all(&file)?;
+
+    let mut path = state.thumbnail_dir.clone();
+    path.push(new_model.sha256);
+    path.set_extension("webp");
+    let thumbnail = im.resize(400, 400, Lanczos3);
+    thumbnail.save(path)?;
 
     txn.commit().await?;
     //End of Transaction
@@ -260,6 +272,20 @@ pub async fn get_media_item(
     ))
 }
 
+fn extension_to_mime(ext: &str) -> &'static str {
+    match ext {
+        "apng" => "image/apng",
+        "avif" => "image/avif",
+        "gif" => "image/gif",
+        "jpg" => "image/jpeg",
+        "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "svg" => "image/svg+xml",
+        "webp" => "image/webp",
+        _ => "application/octet-stream",
+    }
+}
+
 pub async fn get_media_file(
     state: State<AppState>,
     Path(id): Path<i32>,
@@ -292,15 +318,72 @@ pub async fn get_media_file(
     };
     let mut data: Vec<u8> = Vec::new();
     file.read_to_end(&mut data).await?;
-    let kind = infer::get(&data).expect("file type is known");
-    let body = Body::from(data);
 
     let headers = [
-        (header::CONTENT_TYPE, kind.mime_type()),
+        (
+            header::CONTENT_TYPE,
+            extension_to_mime(&path.extension().unwrap().to_string_lossy()),
+        ),
         (
             header::CONTENT_DISPOSITION,
-            &format!("attachment; filename=\"{:?}\"", media_item.storage_uri),
+            &format!("attachment; filename=\"{}\"", media_item.storage_uri),
         ),
     ];
-    Ok((StatusCode::OK, (headers, body).into_response()))
+    Ok((StatusCode::OK, (headers, Body::from(data)).into_response()))
+}
+
+pub async fn get_media_thumbnail(
+    state: State<AppState>,
+    Path(id): Path<i32>,
+) -> Result<(StatusCode, Response), AppError> {
+    println!("get_media called: id={}", id);
+    let result = Media::find_by_id(id).one(&state.conn).await?;
+    let media_item: media::Model = match result {
+        Some(media_item) => media_item,
+        None => {
+            return Ok((
+                StatusCode::NOT_FOUND,
+                format!("Media ID {:?}", id).into_response(),
+            ));
+        }
+    };
+
+    let mut data: Vec<u8> = Vec::new();
+
+    let mut path = state.thumbnail_dir.clone();
+    path.push(&media_item.sha256);
+    path.set_extension("webp");
+    if path.exists() {
+        let mut file = match tokio::fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(err) => {
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    format!("Error Reading {:?} {:?}", path, err).into_response(),
+                ));
+            }
+        };
+        file.read_to_end(&mut data).await?;
+    } else {
+        let mut file_path = state.storage_dir.clone();
+        file_path.push(&media_item.sha256);
+        file_path.set_extension(media_item.r#type.expect("File Extension"));
+        let reader = ImageReader::open(file_path)?;
+        let im = reader.decode()?;
+        let thumbnail = im.resize(400, 400, Lanczos3);
+        thumbnail.save(&path)?;
+        thumbnail.write_to(&mut Cursor::new(&mut data), image::ImageFormat::WebP)?;
+    }
+
+    let headers = [
+        (header::CONTENT_TYPE, "image/webp"),
+        (
+            header::CONTENT_DISPOSITION,
+            &format!(
+                "attachment; filename=\"{}\"",
+                path.file_name().unwrap().to_string_lossy()
+            ),
+        ),
+    ];
+    Ok((StatusCode::OK, (headers, Body::from(data)).into_response()))
 }

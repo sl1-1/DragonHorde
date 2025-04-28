@@ -15,6 +15,7 @@ use tracing::Level;
 struct AppState {
     conn: DatabaseConnection,
     storage_dir: std::path::PathBuf,
+    thumbnail_dir: std::path::PathBuf,
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -37,7 +38,10 @@ async fn main() -> anyhow::Result<()> {
     let state = AppState {
         conn,
         storage_dir: env::var("STORAGE")
-            .expect("PORT is not set in .env file")
+            .expect("STORAGE is not set in .env file")
+            .parse()?,
+        thumbnail_dir: env::var("THUMBNAILS")
+            .expect("THUMBNAILS is not set in .env file")
             .parse()?,
     };
 
@@ -51,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
             get(endpoints::media::get_media_item).put(endpoints::media::update_media_item),
         )
         .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
+        .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
         .route(
             "/v1/media/{id}/tags",
             get(endpoints::media::media_get_tags)
