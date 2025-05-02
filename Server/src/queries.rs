@@ -25,6 +25,7 @@ FROM media
              LEFT JOIN collections on collections.id = media_collection.collection_id
             LEFT JOIN sources on media.id = sources.media_id
             GROUP BY media.id
+            LIMIT $1 OFFSET $2
 "#;
 
 pub(crate) const MEDIA_QUERY_ID: &str = r#"

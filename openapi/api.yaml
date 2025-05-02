@@ -97,7 +97,34 @@ paths:
         "500":
           description: Internal Server Error
       tags:
-        - media                
+        - media
+    patch:
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: integer
+          required: true
+          description: ID of requested media
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "schema/media.json"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "schema/media.json"
+        "404":
+          description: Not Found
+        "500":
+          description: Internal Server Error
+      tags:
+        - media
     delete:
       parameters:
         - in: path
@@ -155,236 +182,6 @@ paths:
               schema:
                 type: integer
                 format: binary
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-  /media/{id}/tags:
-    get:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of requested media tags
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties:
-                  type: array
-                  items:
-                    type: string
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    put:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: tag
-          schema:
-            type: string
-          required: true
-          description: tag to add
-        - in: query
-          name: group
-          schema:
-            type: string
-          required: true
-          description: group of tag to add
-      responses:
-        "201":
-          description: Added
-        "404":
-          description: Not Found
-        "409":
-          description: Already Exists
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    delete:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: tag
-          schema:
-            type: string
-          required: true
-          description: tag to add
-        - in: query
-          name: group
-          schema:
-            type: string
-          required: true
-          description: group of tag to add
-      responses:
-        "200":
-          description: Added
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-  /media/{id}/creator:
-    get:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of requested media tags
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    put:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: creator
-          schema:
-            type: string
-          required: true
-          description: tag to add
-      responses:
-        "201":
-          description: Added
-        "404":
-          description: Not Found
-        "409":
-          description: Already Exists
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    delete:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: creator
-          schema:
-            type: string
-          required: true
-          description: tag to add
-      responses:
-        "200":
-          description: Added
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-  /media/{id}/sources:
-    get:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of requested media tags
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-        "404":
-          description: Not Found
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    put:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: source
-          schema:
-            type: string
-          required: true
-          description: tag to add
-      responses:
-        "201":
-          description: Added
-        "404":
-          description: Not Found
-        "409":
-          description: Already Exists
-        "500":
-          description: Internal Server Error
-      tags:
-        - media
-    delete:
-      parameters:
-        - in: path
-          name: id
-          schema:
-            type: integer
-          required: true
-          description: ID of media to add tags to
-        - in: query
-          name: source
-          schema:
-            type: string
-          required: true
-          description: tag to add
-      responses:
-        "200":
-          description: Added
         "404":
           description: Not Found
         "500":

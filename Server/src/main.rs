@@ -52,16 +52,10 @@ async fn main() -> anyhow::Result<()> {
         )
         .route(
             "/v1/media/{id}",
-            get(endpoints::media::get_media_item).put(endpoints::media::update_media_item),
+            get(endpoints::media::get_media_item).put(endpoints::media::update_media_item).patch(endpoints::media::media_item_patch),
         )
         .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
         .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
-        .route(
-            "/v1/media/{id}/tags",
-            get(endpoints::media::media_get_tags)
-                .put(endpoints::media::media_add_tag)
-                .delete(endpoints::media::media_delete_tag),
-        )
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))

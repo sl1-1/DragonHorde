@@ -16,24 +16,23 @@ use axum::{Json, extract};
 use entity::{media, media::Entity as Media};
 use image::ImageReader;
 use image::imageops::Lanczos3;
-use img_hash::HashAlg::Gradient;
-use img_hash::HasherConfig;
 use sea_orm::prelude::DateTimeWithTimeZone;
 use sea_orm::{
     ActiveModelTrait, DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
     FromJsonQueryResult, FromQueryResult, PaginatorTrait, Set, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
+use dragonhorde_common::hash::{perceptual, sha256};
 
 #[derive(Deserialize)]
 pub struct Pagination {
     page: Option<u64>,
     per_page: Option<u64>,
+    last: Option<u64>,
 }
 
 #[derive(
@@ -66,13 +65,13 @@ pub struct ApiMedia {
     pub created: Option<DateTimeWithTimeZone>,
     pub title: Option<String>,
     #[serde(default)]
-    pub creators: DataVector,
+    pub creators: Option<DataVector>,
     #[serde(default)]
-    pub sources: DataVector,
+    pub sources: Option<DataVector>,
     #[serde(default)]
-    pub collections: DataVector,
+    pub collections: Option<DataVector>,
     #[serde(default)]
-    pub tag_groups: DataMap,
+    pub tag_groups: Option<DataMap>,
     pub description: Option<String>,
 }
 
@@ -100,13 +99,12 @@ pub async fn get_media(
     pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
     let found_media = Media::find()
-        .from_raw_sql(Statement::from_string(
+        .from_raw_sql(Statement::from_sql_and_values(
             DbBackend::Postgres,
             queries::MEDIA_QUERY,
-        ))
+         vec![pagination.per_page.unwrap_or_else(|| 50u64).into(), pagination.last.unwrap_or_else(|| 0).into()]))
         .into_model::<ApiMedia>()
-        .paginate(&state.conn, pagination.per_page.unwrap_or_else(|| 50u64))
-        .fetch_page(pagination.page.unwrap_or_else(|| 0))
+        .all(&state.conn)
         .await?;
 
     Ok((
@@ -117,25 +115,41 @@ pub async fn get_media(
     ))
 }
 
-async fn media_update(
-    payload: ApiMedia,
-    new_model: &media::Model,
-    db: &DatabaseTransaction,
+async fn media_tag_update(tags: Option<DataMap>,
+                          new_model: &media::Model,
+                          db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
-    // Handle Tag Groups and Tags
-    let tag_tuple = tag_funcs::groups_to_tuple(&payload.tag_groups.0);
-    if !tag_tuple.is_empty() {
-        let new_groups = tag_funcs::tag_group_insert(&tag_tuple, db).await?;
-        let inserted_tags = tag_funcs::tags_insert(&tag_tuple, &new_groups, db).await?;
-        tag_funcs::tags_insert_relations(new_model.id, inserted_tags, db).await?;
+    if let Some(tag_groups) = &tags {
+        let tag_tuple = tag_funcs::groups_to_tuple(&tag_groups.0);
+        if !tag_tuple.is_empty() {
+            let new_groups = tag_funcs::tag_group_insert(&tag_tuple, db).await?;
+            let inserted_tags = tag_funcs::tags_insert(&tag_tuple, &new_groups, db).await?;
+            tag_funcs::tags_insert_relations(new_model.id, inserted_tags, db).await?;
+        }
+        tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
     }
-    tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
+    Ok(())
+}
 
-    creators_insert(payload.creators.0.clone(), new_model.id, db).await?;
-    creator_delete(payload.creators.0, new_model.id, db).await?;
+async fn media_creators_update(creators: Option<DataVector>,
+new_model: &media::Model,
+db: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if let Some(creators) = &creators {
+        creators_insert(creators.0.clone(), new_model.id, db).await?;
+        creator_delete(creators.0.clone(), new_model.id, db).await?;
+    }
+    Ok(())
+}
 
-    sources_insert(payload.sources.0.clone(), new_model.id, db).await?;
-    sources_delete(payload.sources.0, new_model.id, db).await?;
+async fn media_sources_update(sources: Option<DataVector>,
+                               new_model: &media::Model,
+                               db: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if let Some(sources) = &sources {
+        sources_insert(sources.0.clone(), new_model.id, db).await?;
+        sources_delete(sources.0.clone(), new_model.id, db).await?;
+    }
     Ok(())
 }
 
@@ -178,25 +192,13 @@ pub async fn post_media(
         .to_string();
     let im = reader.decode()?;
     if payload.perceptual_hash.is_none() {
-        let image_hash = HasherConfig::with_bytes_type::<[u8; 8]>()
-            .hash_alg(Gradient)
-            .hash_size(8, 8)
-            .preproc_dct()
-            .to_hasher()
-            .hash_image(&im);
-        let hash: [u8; 8] = image_hash.as_bytes().try_into()?;
-        let phash = i64::from_be_bytes(hash);
-        payload.perceptual_hash = Some(format!("{:x}", phash))
+        payload.perceptual_hash = Some(perceptual(&im))
     }
 
-    //Hash
-    let mut hasher = Sha256::new();
-    hasher.update(&file);
-    let hash = hasher.finalize();
-    println!("{:x}", hash);
+    let hash = sha256(&file);
 
     let mut file_name: std::path::PathBuf = std::path::PathBuf::new();
-    file_name.set_file_name(format!("{:x}", hash));
+    file_name.set_file_name(&hash);
     file_name.set_extension(&image_format);
 
     //Database Transaction
@@ -204,19 +206,21 @@ pub async fn post_media(
 
     let new_item: media::ActiveModel = media::ActiveModel {
         storage_uri: Set(file_name.to_string_lossy().to_string()),
-        sha256: Set(format!("{:x}", hash)),
-        perceptual_hash: Set(payload.perceptual_hash.clone()),
-        created: Set(payload.created.clone()),
-        title: Set(payload.title.clone()),
+        sha256: Set(hash),
+        perceptual_hash: Set(payload.perceptual_hash),
+        created: Set(payload.created),
+        title: Set(payload.title),
         r#type: Set(Some(image_format)),
-        description: Set(payload.description.clone()),
+        description: Set(payload.description),
         ..Default::default()
     };
 
     let new_model = new_item.insert(&txn).await?;
 
-    media_update(payload, &new_model, &txn).await?;
-
+    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_creators_update(payload.creators, &new_model, &txn).await?;
+    media_sources_update(payload.sources, &new_model, &txn).await?;
+    
     let mut out = File::create_new(state.storage_dir.clone().join(file_name))?;
     out.write_all(&file)?;
 
@@ -245,16 +249,18 @@ pub async fn update_media_item(
 
     let new_model = Media::update(media::ActiveModel {
         id: Set(id),
-        perceptual_hash: Set(payload.perceptual_hash.clone()),
-        created: Set(payload.created.clone()),
-        title: Set(payload.title.clone()),
-        description: Set(payload.description.clone()),
+        perceptual_hash: Set(payload.perceptual_hash),
+        created: Set(payload.created),
+        title: Set(payload.title),
+        description: Set(payload.description),
         ..Default::default()
     })
-    .exec(&state.conn)
+    .exec(&txn)
     .await?;
 
-    media_update(payload, &new_model, &txn).await?;
+    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_creators_update(payload.creators, &new_model, &txn).await?;
+    media_sources_update(payload.sources, &new_model, &txn).await?;
 
     txn.commit().await?;
     //End of Transaction
@@ -263,6 +269,33 @@ pub async fn update_media_item(
         StatusCode::OK,
         Json(load_media_item(id, &state.conn).await?),
     ))
+}
+
+pub async fn media_item_patch(state: State<AppState>,
+                              Path(id): Path<i64>,
+                              Json(payload): Json<ApiMedia>,
+) -> Result<StatusCode, AppError> {
+    let item = load_media_item(id, &state.conn).await?;
+    let txn: DatabaseTransaction = state.conn.begin().await?;
+    let new_model = Media::update(media::ActiveModel {
+        id: Set(id),
+        perceptual_hash: Set(payload.perceptual_hash.or(item.perceptual_hash.clone())),
+        created: Set(payload.created.or(item.created.clone())),
+        title: Set(payload.title.or(item.title.clone())),
+        description: Set(payload.description.or(item.description.clone())),
+        ..Default::default()
+    })
+        .exec(&txn)
+        .await?;
+    
+    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_creators_update(payload.creators, &new_model, &txn).await?;
+    media_sources_update(payload.sources, &new_model, &txn).await?;
+
+    txn.commit().await?;
+    //End of Transaction
+    
+    Ok(StatusCode::OK)
 }
 
 pub async fn get_media_item(
@@ -293,9 +326,7 @@ pub async fn get_media_file(
     state: State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<(StatusCode, Response), AppError> {
-    println!("get_media called: id={}", id);
-    let result = Media::find_by_id(id).one(&state.conn).await?;
-    let media_item: media::Model = match result {
+    let media_item: media::Model = match Media::find_by_id(id).one(&state.conn).await? {
         Some(media_item) => media_item,
         None => {
             return Ok((
@@ -339,9 +370,7 @@ pub async fn get_media_thumbnail(
     state: State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<(StatusCode, Response), AppError> {
-    println!("get_media called: id={}", id);
-    let result = Media::find_by_id(id).one(&state.conn).await?;
-    let media_item: media::Model = match result {
+    let media_item: media::Model = match Media::find_by_id(id).one(&state.conn).await? {
         Some(media_item) => media_item,
         None => {
             return Ok((
