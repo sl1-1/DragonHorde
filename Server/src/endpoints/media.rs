@@ -2,8 +2,6 @@ mod creator_funcs;
 mod source_funcs;
 mod tag_funcs;
 
-pub use tag_funcs::{media_add_tag, media_delete_tag, media_get_tags};
-
 use crate::endpoints::media::creator_funcs::{creator_delete, creators_insert};
 use crate::endpoints::media::source_funcs::{sources_delete, sources_insert};
 use crate::error::AppError;
@@ -17,10 +15,7 @@ use entity::{media, media::Entity as Media};
 use image::ImageReader;
 use image::imageops::Lanczos3;
 use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::{
-    ActiveModelTrait, DatabaseConnection, DatabaseTransaction, DbBackend, EntityTrait,
-    FromJsonQueryResult, FromQueryResult, PaginatorTrait, Set, Statement, TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -30,9 +25,8 @@ use dragonhorde_common::hash::{perceptual, sha256};
 
 #[derive(Deserialize)]
 pub struct Pagination {
-    page: Option<u64>,
-    per_page: Option<u64>,
-    last: Option<u64>,
+    pub(crate) per_page: Option<u64>,
+    pub(crate) last: Option<u64>,
 }
 
 #[derive(
@@ -82,15 +76,8 @@ pub struct SearchResult {
 }
 
 async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
-    let found_media = Media::find()
-        .from_raw_sql(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            queries::MEDIA_QUERY_ID,
-            vec![id.into()],
-        ))
-        .into_model::<ApiMedia>()
-        .one(db)
-        .await?;
+    let q = db.get_database_backend().build(&queries::media_item_query(id));
+    let found_media = ApiMedia::find_by_statement(q).one(db).await?;
     Ok(found_media.expect("Media not found"))
 }
 
@@ -98,15 +85,8 @@ pub async fn get_media(
     state: State<AppState>,
     pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
-    let found_media = Media::find()
-        .from_raw_sql(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            queries::MEDIA_QUERY,
-         vec![pagination.per_page.unwrap_or_else(|| 50u64).into(), pagination.last.unwrap_or_else(|| 0).into()]))
-        .into_model::<ApiMedia>()
-        .all(&state.conn)
-        .await?;
-
+    let q = state.conn.get_database_backend().build(&queries::search_query(None, None, Some(pagination.0)));
+    let found_media = ApiMedia::find_by_statement(q).all(&state.conn).await?;
     Ok((
         StatusCode::OK,
         Json(SearchResult {

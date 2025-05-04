@@ -20,3 +20,5 @@ serde_with = "3.12.0"
 img_hash = { git = "https://github.com/sl1-1/img_hash.git" }
 image = { version = "0.25.6", features = ["png", "tiff", "webp", "jpeg", "gif"] }
 dragonhorde_common = { version = "0.1.0", path = "../dragonhorde_common" }
+sea-query = { version = "0.32.4", features = ["postgres-array", "with-chrono", "with-json"] }
+axum-extra = { version = "0.10.1", features = ["query"] }

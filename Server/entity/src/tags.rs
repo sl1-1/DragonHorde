@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(select_as="citext")]
     pub tag: String,
     pub created: DateTimeWithTimeZone,
     pub group: i64,

@@ -13,8 +13,8 @@ pub async fn creators_insert(
     db: &DatabaseTransaction,
 ) -> Result<Vec<media_creators::Model>, AppError> {
     let mut creators_in = creators_in.clone();
-    creators_in.sort();
-    creators_in.dedup();
+    creators_in.sort_by_key(| c| c.to_lowercase());
+    creators_in.dedup_by_key(| c| c.to_lowercase());
     if !creators_in.is_empty(){
         let creators_to_insert: Vec<creators::ActiveModel> = creators_in
             .into_iter()

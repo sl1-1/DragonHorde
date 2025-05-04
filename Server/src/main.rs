@@ -56,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
         .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
+        .route("/v1/search", get(endpoints::search::search_query))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
