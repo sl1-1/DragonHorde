@@ -69,7 +69,7 @@ use entity::{media, media::Entity as Media};
 //             GROUP BY media.id
 // "#;
 
-pub fn search_query(has: Option<Vec<String>>, has_not: Option<Vec<String>>, pagination: Option<Pagination>) -> SelectStatement {
+pub fn base_media() -> SelectStatement {
     let tag_query = Query::select()
         .column((MediaTags, media_tags::Column::MediaId))
         .column((TagGroups, tag_groups::Column::Name))
@@ -148,7 +148,7 @@ pub fn search_query(has: Option<Vec<String>>, has_not: Option<Vec<String>>, pagi
             Alias::new("collections"))
         .join(
             JoinType::LeftJoin,
-           Sources,
+            Sources,
             Expr::col((Sources,sources::Column::MediaId))
                 .equals((Media, media::Column::Id))
         )
@@ -166,47 +166,47 @@ pub fn search_query(has: Option<Vec<String>>, has_not: Option<Vec<String>>, pagi
             Expr::cust("COALESCE(JSON_OBJECT_AGG(t.name, ts) FILTER (WHERE t.media_id = media.id), '{}')"),
             Alias::new("tag_groups")
         )
-        .conditions(
-            has.is_some(),
-            |q| {
-                q.and_having(
-                    PgFunc::array_agg(Expr::col(tags::Column::Tag))
-                        .contains(Expr::value(has.unwrap()).cast_as(Alias::new("citext[]")))
-                );
-            },
-            |_q| {}
-        )
-        .conditions(
-            has_not.is_some(),
-            |q| {
-                q.and_having(
-                    ExprTrait::not(
-                        PgFunc::array_agg(Expr::col(tags::Column::Tag))
-                            .contains(
-                                Expr::value(has_not.unwrap()).cast_as(Alias::new("citext[]")))
-                    )
-                );
-            },
-            |_q| {}
-        )
-        .conditions(
-            pagination.is_some(),
-            |q| { 
-                let pagination = pagination.unwrap();
-                let per_page = pagination.per_page.unwrap_or(50);
-                let offset = pagination.last.unwrap_or(0);
-                q.limit(per_page).offset(offset); 
-            },
-            |q| { q.limit(50); }
-        )
         .group_by_col((Media, media::Column::Id))
         .group_by_col((Media, media::Column::Uploaded))
         .order_by((Media, media::Column::Uploaded), Order::Desc)
+        .take()    
+}
+
+pub fn search_has_tags(mut q: SelectStatement, has: Vec<String>) -> SelectStatement {
+    q.and_having(
+        PgFunc::array_agg(Expr::col(tags::Column::Tag))
+            .contains(Expr::value(has).cast_as(Alias::new("citext[]")))
+    )
         .take()
 }
 
-pub fn media_item_query(id: i64) -> SelectStatement{
-    search_query(None, None, None)
+pub fn search_not_tags(mut q: SelectStatement, has_not: Vec<String>) -> SelectStatement {
+    q.and_having(
+        ExprTrait::not(
+            PgFunc::array_agg(Expr::col(tags::Column::Tag))
+                .contains(
+                    Expr::value(has_not).cast_as(Alias::new("citext[]")))
+        )
+    )
+        .take()
+}
+
+pub fn search_creator(mut q: SelectStatement, creators: Vec<String>) -> SelectStatement {
+    q.and_having(Expr::col((Creators, creators::Column::Name)).is_in(creators))
+        .group_by_col((Creators, creators::Column::Name))
+        .take()
+}
+
+pub fn pagination(mut q: SelectStatement, pagination: Pagination) -> SelectStatement {
+    let per_page = pagination.per_page.unwrap_or(50);
+    let offset = pagination.last.unwrap_or(0);
+    q.limit(per_page)
+        .offset(offset)
+        .take()
+}
+
+pub fn media_item(id: i64) -> SelectStatement{
+    base_media()
         .and_where(Expr::col((Media, media::Column::Id))
             .eq(id))
         .take()

@@ -76,7 +76,7 @@ pub struct SearchResult {
 }
 
 async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
-    let q = db.get_database_backend().build(&queries::media_item_query(id));
+    let q = db.get_database_backend().build(&queries::media_item(id));
     let found_media = ApiMedia::find_by_statement(q).one(db).await?;
     Ok(found_media.expect("Media not found"))
 }
@@ -85,8 +85,10 @@ pub async fn get_media(
     state: State<AppState>,
     pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
-    let q = state.conn.get_database_backend().build(&queries::search_query(None, None, Some(pagination.0)));
-    let found_media = ApiMedia::find_by_statement(q).all(&state.conn).await?;
+    let mut q = queries::base_media();
+    q = queries::pagination(q, pagination.0);
+    let statement = state.conn.get_database_backend().build(&q);
+    let found_media = ApiMedia::find_by_statement(statement).all(&state.conn).await?;
     Ok((
         StatusCode::OK,
         Json(SearchResult {
