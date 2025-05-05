@@ -130,6 +130,8 @@ pub mod media_api;
 // pub mod tag_group_api;
 
 pub mod configuration;
+mod search_api;
+mod tag_api;
 
 use std::sync::Arc;
 
@@ -137,7 +139,9 @@ pub trait Api {
     // fn collection_api(&self) -> &dyn collection_api::CollectionApi;
     // fn creator_api(&self) -> &dyn creator_api::CreatorApi;
     fn media_api(&self) -> &dyn media_api::MediaApi;
-    // fn search_api(&self) -> &dyn search_api::SearchApi;
+    fn search_api(&self) -> &dyn search_api::SearchApi;
+    fn tag_api(&self) -> &dyn tag_api::TagApi;
+
     // fn tag_group_api(&self) -> &dyn tag_group_api::TagGroupApi;
 }
 
@@ -145,7 +149,9 @@ pub struct ApiClient {
     // collection_api: Box<dyn collection_api::CollectionApi>,
     // creator_api: Box<dyn creator_api::CreatorApi>,
     media_api: Box<dyn media_api::MediaApi>,
-    // search_api: Box<dyn search_api::SearchApi>,
+    search_api: Box<dyn search_api::SearchApi>,
+    tag_api: Box<dyn tag_api::TagApi>,
+
     // tag_group_api: Box<dyn tag_group_api::TagGroupApi>,
 }
 
@@ -155,7 +161,8 @@ impl ApiClient {
             // collection_api: Box::new(collection_api::CollectionApiClient::new(configuration.clone())),
             // creator_api: Box::new(creator_api::CreatorApiClient::new(configuration.clone())),
             media_api: Box::new(media_api::MediaApiClient::new(configuration.clone())),
-            // search_api: Box::new(search_api::SearchApiClient::new(configuration.clone())),
+            search_api: Box::new(search_api::SearchApiClient::new(configuration.clone())),
+            tag_api: Box::new(tag_api::TagApiClient::new(configuration.clone())),
             // tag_group_api: Box::new(tag_group_api::TagGroupApiClient::new(configuration.clone())),
         }
     }
@@ -171,9 +178,12 @@ impl Api for ApiClient {
     fn media_api(&self) -> &dyn media_api::MediaApi {
         self.media_api.as_ref()
     }
-    // fn search_api(&self) -> &dyn search_api::SearchApi {
-    //     self.search_api.as_ref()
-    // }
+    fn search_api(&self) -> &dyn search_api::SearchApi {
+        self.search_api.as_ref()
+    }
+    fn tag_api(&self) -> &dyn tag_api::TagApi {
+        self.tag_api.as_ref()
+    }
     // fn tag_group_api(&self) -> &dyn tag_group_api::TagGroupApi {
     //     self.tag_group_api.as_ref()
     // }
