@@ -7,11 +7,12 @@ use axum::http::StatusCode;
 use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use sea_query::{JoinType, Order};
 use serde::Deserialize;
+use utoipa::IntoParams;
 use entity::{tags, tags::Entity as Tags};
 use entity::{tag_groups, tag_groups::Entity as TagGroups};
 use entity::{media_tags, media_tags::Entity as MediaTags};
 
-#[derive(Debug, Deserialize)]
+#[derive(IntoParams, Debug, Deserialize)]
 pub struct TagQuery {
     tag: String,
 }
@@ -26,6 +27,7 @@ enum QueryAs {
     Tag
 }
 
+#[utoipa::path(get, path = "/v1/tags", params(TagQuery), responses((status = OK, body = Vec<String>)), tags = ["tags"])]
 pub async fn search_tags(
     state: State<AppState>,
     query: Query<TagQuery>,

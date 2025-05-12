@@ -20,3 +20,7 @@ image = { version = "0.25.6", features = ["png", "tiff", "webp", "jpeg", "gif"] 
 dragonhorde_common = { version = "0.1.0", path = "../dragonhorde_common" }
 sea-query = { version = "0.32.4", features = ["postgres-array", "with-chrono", "with-json"] }
 axum-extra = { version = "0.10.1", features = ["query"] }
+utoipa-axum = "0.2.0"
+utoipa = { version = "5.3.1", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"]}
+chrono = "0.4.41"

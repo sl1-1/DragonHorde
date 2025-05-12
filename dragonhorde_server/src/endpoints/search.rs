@@ -1,24 +1,25 @@
 use crate::endpoints::media::{ApiMedia, SearchResult};
 use crate::error::AppError;
+use crate::queries::search_creator;
 use crate::{AppState, queries};
 use axum::Json;
-use axum::extract::{State};
-use axum_extra::extract::Query;
+use axum::extract::State;
 use axum::http::StatusCode;
+use axum_extra::extract::Query;
 use sea_orm::{ConnectionTrait, FromQueryResult};
 use serde::Deserialize;
-use crate::queries::search_creator;
+use utoipa::IntoParams;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, IntoParams, Deserialize)]
 pub struct SearchQuery {
     #[serde(default)]
-    has_tags: Vec<String>,
-    #[serde(default)]
-    not_tags: Vec<String>,
+    tags: Vec<String>,
     #[serde(default)]
     creators: Vec<String>,
 }
 
+#[utoipa::path(get, path = "/v1/search", params(SearchQuery, crate::endpoints::media::Pagination), responses((status = OK, body = SearchResult)), tags = ["search"]
+)]
 pub async fn search_query(
     state: State<AppState>,
     query: Query<SearchQuery>,
@@ -26,21 +27,35 @@ pub async fn search_query(
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
     dbg!(&query);
     let mut q = queries::base_media();
-    if !query.has_tags.is_empty() {
-       q =  queries::search_has_tags(q, query.has_tags.clone());
-    }
-    if !query.not_tags.is_empty() {
-        q = queries::search_not_tags(q, query.not_tags.clone());
+    if !query.tags.is_empty() {
+        let tags: Vec<String> = query
+            .tags
+            .clone()
+            .into_iter()
+            .filter(|x| !x.starts_with('-'))
+            .collect();
+        let blocked: Vec<String> = query
+            .tags
+            .clone()
+            .into_iter()
+            .filter(|x| x.starts_with('-'))
+            .map(|t| t.replacen("-", "", 1))
+            .collect();
+        if !tags.is_empty() {
+            q = queries::search_has_tags(q, tags);
+        }
+        if !blocked.is_empty() {
+            q = queries::search_not_tags(q, blocked);
+        }
     }
     if !query.creators.is_empty() {
         q = search_creator(q, query.creators.clone());
     }
     q = queries::pagination(q, pagination.0);
-    let statement = state
-        .conn
-        .get_database_backend()
-        .build(&q);
-    let found_media = ApiMedia::find_by_statement(statement).all(&state.conn).await?;
+    let statement = state.conn.get_database_backend().build(&q);
+    let found_media = ApiMedia::find_by_statement(statement)
+        .all(&state.conn)
+        .await?;
     Ok((
         StatusCode::OK,
         Json(SearchResult {

@@ -11,26 +11,40 @@ use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, extract};
+use chrono::{DateTime, FixedOffset, Utc};
+use dragonhorde_common::hash::{perceptual, sha256};
 use entity::{media, media::Entity as Media};
 use image::ImageReader;
 use image::imageops::Lanczos3;
-use sea_orm::prelude::DateTimeWithTimeZone;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    FromJsonQueryResult, FromQueryResult, Set, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
-use dragonhorde_common::hash::{perceptual, sha256};
+use utoipa::{IntoParams, ToSchema};
 
-#[derive(Deserialize)]
+#[derive(IntoParams, Deserialize)]
 pub struct Pagination {
+    /// Number of Results per page
     pub(crate) per_page: Option<u64>,
+    /// Last object of previous results, provide to get next results
     pub(crate) last: Option<u64>,
 }
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    FromJsonQueryResult,
 )]
 pub struct DataVector(pub Vec<String>);
 impl Default for DataVector {
@@ -39,7 +53,8 @@ impl Default for DataVector {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult,
+)]
 pub struct DataMap(pub BTreeMap<String, Vec<String>>);
 
 impl Default for DataMap {
@@ -49,28 +64,51 @@ impl Default for DataMap {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromQueryResult, FromJsonQueryResult)]
+#[derive(
+    utoipa::ToSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    FromQueryResult,
+    FromJsonQueryResult,
+)]
 pub struct ApiMedia {
+    #[schema(read_only, value_type = i64)]
     pub id: Option<i64>,
+    #[schema(read_only, value_type = String)]
     pub storage_uri: Option<String>,
+    #[schema(read_only, value_type = String)]
     pub sha256: Option<String>,
+    #[schema(read_only, value_type = String)]
     pub perceptual_hash: Option<String>,
-    pub uploaded: Option<DateTimeWithTimeZone>,
-    pub created: Option<DateTimeWithTimeZone>,
+    /// date-time that this item was uploaded
+    #[schema(read_only, value_type = DateTime<FixedOffset>)]
+    pub uploaded: Option<DateTime<FixedOffset>>,
+    /// date-time that this item was created, if known
+    pub created: Option<DateTime<FixedOffset>>,
     pub title: Option<String>,
+    #[schema(value_type = Option<Vec<String>>)]
     #[serde(default)]
     pub creators: Option<DataVector>,
+    /// Known source locations for this item
+    #[schema(value_type = Option<Vec<String>>)]
     #[serde(default)]
     pub sources: Option<DataVector>,
+    /// Collections this item is in
+    #[schema(value_type = Option<Vec<String>>)]
     #[serde(default)]
     pub collections: Option<DataVector>,
     #[serde(default)]
+    #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
     pub tag_groups: Option<DataMap>,
+    /// Description of this item, if available
     pub description: Option<String>,
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
     pub result: Vec<ApiMedia>,
 }
@@ -81,6 +119,7 @@ async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, A
     Ok(found_media.expect("Media not found"))
 }
 
+#[utoipa::path(get, path = "/v1/media", params(Pagination), responses((status = OK, body = SearchResult)), tags = ["media"])]
 pub async fn get_media(
     state: State<AppState>,
     pagination: Query<Pagination>,
@@ -88,7 +127,9 @@ pub async fn get_media(
     let mut q = queries::base_media();
     q = queries::pagination(q, pagination.0);
     let statement = state.conn.get_database_backend().build(&q);
-    let found_media = ApiMedia::find_by_statement(statement).all(&state.conn).await?;
+    let found_media = ApiMedia::find_by_statement(statement)
+        .all(&state.conn)
+        .await?;
     Ok((
         StatusCode::OK,
         Json(SearchResult {
@@ -97,9 +138,10 @@ pub async fn get_media(
     ))
 }
 
-async fn media_tag_update(tags: Option<DataMap>,
-                          new_model: &media::Model,
-                          db: &DatabaseTransaction,
+async fn media_tag_update(
+    tags: Option<DataMap>,
+    new_model: &media::Model,
+    db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     if let Some(tag_groups) = &tags {
         let tag_tuple = tag_funcs::groups_to_tuple(&tag_groups.0);
@@ -113,9 +155,10 @@ async fn media_tag_update(tags: Option<DataMap>,
     Ok(())
 }
 
-async fn media_creators_update(creators: Option<DataVector>,
-new_model: &media::Model,
-db: &DatabaseTransaction,
+async fn media_creators_update(
+    creators: Option<DataVector>,
+    new_model: &media::Model,
+    db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     if let Some(creators) = &creators {
         creators_insert(creators.0.clone(), new_model.id, db).await?;
@@ -124,9 +167,10 @@ db: &DatabaseTransaction,
     Ok(())
 }
 
-async fn media_sources_update(sources: Option<DataVector>,
-                               new_model: &media::Model,
-                               db: &DatabaseTransaction,
+async fn media_sources_update(
+    sources: Option<DataVector>,
+    new_model: &media::Model,
+    db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     if let Some(sources) = &sources {
         sources_insert(sources.0.clone(), new_model.id, db).await?;
@@ -135,6 +179,15 @@ async fn media_sources_update(sources: Option<DataVector>,
     Ok(())
 }
 
+#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[allow(unused)]
+struct UploadForm {
+    data: ApiMedia,
+    #[schema(format = Binary, content_media_type = "application/octet-stream")]
+    file: String,
+}
+
+#[utoipa::path(post, path = "/v1/media", request_body(content = UploadForm, content_type = "multipart/form-data"),responses((status = OK, body = ApiMedia)), tags = ["media"])]
 pub async fn post_media(
     state: State<AppState>,
     mut multipart: extract::Multipart,
@@ -202,7 +255,7 @@ pub async fn post_media(
     media_tag_update(payload.tag_groups, &new_model, &txn).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
-    
+
     let mut out = File::create_new(state.storage_dir.clone().join(file_name))?;
     out.write_all(&file)?;
 
@@ -221,6 +274,7 @@ pub async fn post_media(
     ))
 }
 
+#[utoipa::path(post, path = "/v1/media/{id}", request_body = ApiMedia , responses((status = OK, body = ApiMedia)), tags = ["media"])]
 pub async fn update_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
@@ -253,9 +307,11 @@ pub async fn update_media_item(
     ))
 }
 
-pub async fn media_item_patch(state: State<AppState>,
-                              Path(id): Path<i64>,
-                              Json(payload): Json<ApiMedia>,
+#[utoipa::path(patch, path = "/v1/media/{id}", request_body = ApiMedia , responses((status = OK, body = ApiMedia)), tags = ["media"])]
+pub async fn media_item_patch(
+    state: State<AppState>,
+    Path(id): Path<i64>,
+    Json(payload): Json<ApiMedia>,
 ) -> Result<StatusCode, AppError> {
     let item = load_media_item(id, &state.conn).await?;
     let txn: DatabaseTransaction = state.conn.begin().await?;
@@ -267,19 +323,20 @@ pub async fn media_item_patch(state: State<AppState>,
         description: Set(payload.description.or(item.description.clone())),
         ..Default::default()
     })
-        .exec(&txn)
-        .await?;
-    
+    .exec(&txn)
+    .await?;
+
     media_tag_update(payload.tag_groups, &new_model, &txn).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 
     txn.commit().await?;
     //End of Transaction
-    
+
     Ok(StatusCode::OK)
 }
 
+#[utoipa::path(get, path = "/v1/media/{id}", responses((status = OK, body = ApiMedia)), tags = ["media"])]
 pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
@@ -303,7 +360,11 @@ fn extension_to_mime(ext: &str) -> &'static str {
         _ => "application/octet-stream",
     }
 }
+#[derive(ToSchema)]
+#[schema(value_type = String, format = Binary)]
+pub struct Binary(String);
 
+#[utoipa::path(get, path = "/v1/media/{id}/file", responses((status = OK, body = Binary, content_type = "application/octet")), tags = ["media"])]
 pub async fn get_media_file(
     state: State<AppState>,
     Path(id): Path<i32>,
@@ -348,6 +409,7 @@ pub async fn get_media_file(
     Ok((StatusCode::OK, (headers, Body::from(data)).into_response()))
 }
 
+#[utoipa::path(get, path = "/v1/media/{id}/thumbnail",responses((status = OK, body = Binary, content_type = "application/octet")), tags = ["media"])]
 pub async fn get_media_thumbnail(
     state: State<AppState>,
     Path(id): Path<i32>,

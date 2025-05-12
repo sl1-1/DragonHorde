@@ -10,6 +10,8 @@ use axum::extract::DefaultBodyLimit;
 use tokio::{self, net::TcpListener};
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
+use utoipa_axum::{routes, PathItemExt, router::OpenApiRouter};
+use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(Clone)]
 struct AppState {
@@ -45,19 +47,38 @@ async fn main() -> anyhow::Result<()> {
             .parse()?,
     };
 
-    let app = Router::new()
-        .route(
-            "/v1/media",
-            get(endpoints::media::get_media).post(endpoints::media::post_media),
-        )
-        .route(
-            "/v1/media/{id}",
-            get(endpoints::media::get_media_item).put(endpoints::media::update_media_item).patch(endpoints::media::media_item_patch),
-        )
-        .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
-        .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
-        .route("/v1/search", get(endpoints::search::search_query))
-        .route("/v1/tags", get(endpoints::tags::search_tags))
+    let (router, api) = OpenApiRouter::new()
+        .routes(routes!(endpoints::media::get_media))
+        .routes(routes!(endpoints::media::post_media))
+        .routes(routes!(endpoints::media::update_media_item))
+        .routes(routes!(endpoints::media::media_item_patch))
+        .routes(routes!(endpoints::media::get_media_item))
+        .routes(routes!(endpoints::media::get_media_file))
+        .routes(routes!(endpoints::media::get_media_thumbnail))
+        .routes(routes!(endpoints::search::search_query))
+        .routes(routes!(endpoints::tags::search_tags))
+        .routes(routes!(endpoints::autocomplete::autocomplete))
+
+        .split_for_parts();
+
+    let app = router
+        .merge(SwaggerUi::new("/swagger-ui")
+            .url("/api-docs/openapi.json", api.clone()))
+
+
+    // let app = Router::new()
+    //     .route(
+    //         "/v1/media",
+    //         get(endpoints::media::get_media).post(endpoints::media::post_media),
+    //     )
+    //     .route(
+    //         "/v1/media/{id}",
+    //         get(endpoints::media::get_media_item).put(endpoints::media::update_media_item).patch(endpoints::media::media_item_patch),
+    //     )
+    //     .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
+    //     .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
+    //     .route("/v1/search", get(endpoints::search::search_query))
+    //     .route("/v1/tags", get(endpoints::tags::search_tags))
 
         .layer(
             TraceLayer::new_for_http()
