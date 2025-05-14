@@ -142,6 +142,7 @@ async fn media_tag_update(
     tags: Option<DataMap>,
     new_model: &media::Model,
     db: &DatabaseTransaction,
+    create: bool,
 ) -> Result<(), AppError> {
     if let Some(tag_groups) = &tags {
         let tag_tuple = tag_funcs::groups_to_tuple(&tag_groups.0);
@@ -150,7 +151,9 @@ async fn media_tag_update(
             let inserted_tags = tag_funcs::tags_insert(&tag_tuple, &new_groups, db).await?;
             tag_funcs::tags_insert_relations(new_model.id, inserted_tags, db).await?;
         }
-        tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
+        if !create {
+            tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
+        }
     }
     Ok(())
 }
@@ -252,7 +255,7 @@ pub async fn post_media(
 
     let new_model = new_item.insert(&txn).await?;
 
-    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_tag_update(payload.tag_groups, &new_model, &txn, true).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 
@@ -294,7 +297,7 @@ pub async fn update_media_item(
     .exec(&txn)
     .await?;
 
-    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_tag_update(payload.tag_groups, &new_model, &txn, false).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 
@@ -326,7 +329,7 @@ pub async fn media_item_patch(
     .exec(&txn)
     .await?;
 
-    media_tag_update(payload.tag_groups, &new_model, &txn).await?;
+    media_tag_update(payload.tag_groups, &new_model, &txn, false).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 

@@ -1,6 +1,8 @@
+use sea_orm::{ColumnTrait, SelectColumns};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use sea_orm::{DatabaseTransaction, EntityTrait, ModelTrait, Set};
+use sea_orm::{DatabaseTransaction, EntityTrait, ModelTrait, QueryFilter, QuerySelect, RelationTrait, Set};
 use sea_orm::sea_query::OnConflict;
+use sea_query::JoinType;
 use entity::prelude::{MediaTags};
 use entity::{media, media_tags};
 use entity::{tags, tags::Entity as Tags};
@@ -119,9 +121,15 @@ pub async fn tags_update(
     media_item: &media::Model,
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
-    let current_tags = media_item
-        .find_related(Tags)
-        .find_also_related(TagGroups)
+    let current_tags: Vec<(i64, String, String)> = MediaTags::find()
+        .filter(media_tags::Column::MediaId.eq(media_item.id))
+        .join(JoinType::LeftJoin, media_tags::Relation::Tags.def())
+        .join(JoinType::LeftJoin, tag_groups::Relation::Tags.def().rev())
+        .select_only()
+        .select_column(tags::Column::Id)
+        .select_column(tag_groups::Column::Name)
+        .select_column(tags::Column::Tag)
+        .into_tuple()
         .all(db)
         .await?;
 
@@ -129,12 +137,12 @@ pub async fn tags_update(
 
     let current_tags_id_by_tag: HashMap<String, i64> = current_tags
         .iter()
-        .map(|t| (t.0.tag.clone(), t.0.id))
+        .map(|t| (t.2.clone(), t.0))
         .collect();
 
     let current_tag_tup = current_tags
         .iter()
-        .map(|t| -> (String, String) { (t.1.clone().unwrap().name, t.0.tag.clone()) })
+        .map(|t| -> (String, String) { (t.1.clone(), t.2.clone()) })
         .collect::<Vec<(String, String)>>();
 
     let current_hash: HashSet<(String, String)> = current_tag_tup.into_iter().collect();
