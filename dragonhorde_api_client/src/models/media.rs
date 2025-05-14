@@ -25,10 +25,10 @@ pub struct Media {
     pub perceptual_hash: Option<String>,
     /// date-time the media was uploaded to this instance
     #[serde(rename = "uploaded", skip_serializing_if = "Option::is_none")]
-    pub uploaded: Option<String>,
+    pub uploaded: Option<chrono::DateTime<chrono::Utc>>,
     /// date-time the media was created
     #[serde(rename = "created", skip_serializing_if = "Option::is_none")]
-    pub created: Option<String>,
+    pub created: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(rename = "title", skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(rename = "creators", skip_serializing_if = "Option::is_none")]
