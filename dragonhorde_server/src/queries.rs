@@ -8,11 +8,11 @@ use entity::{creators, creators::Entity as Creators};
 use entity::{media_creators, media_creators::Entity as MediaCreators};
 use entity::{media_tags, media_tags::Entity as MediaTags};
 use entity::{collections, collections::Entity as Collections};
+use entity::{collection_tags, collection_tags::Entity as CollectionTags};
 use entity::{media_collection, media_collection::Entity as MediaCollection};
+use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+
 use entity::{media, media::Entity as Media};
-
-
-
 // pub (crate) const MEDIA_QUERY: &str = r#"
 // SELECT media.id,
 //        storage_uri,
@@ -208,6 +208,93 @@ pub fn pagination(mut q: SelectStatement, pagination: Pagination) -> SelectState
 pub fn media_item(id: i64) -> SelectStatement{
     base_media()
         .and_where(Expr::col((Media, media::Column::Id))
+            .eq(id))
+        .take()
+}
+
+
+pub fn base_collection() -> SelectStatement {
+    let tag_query = Query::select()
+        .column((CollectionTags, collection_tags::Column::CollectionId))
+        .column((TagGroups, tag_groups::Column::Name))
+        .expr_as(
+            PgFunc::json_agg(Expr::col((Tags, tags::Column::Tag))),
+            Alias::new("ts")
+        )
+        .from(TagGroups)
+        .join(
+            JoinType::LeftJoin,
+            Tags,
+            Expr::col((Tags, tags::Column::Group))
+                .equals((TagGroups, tag_groups::Column::Id))
+        )
+        .join(
+            JoinType::LeftJoin,
+            CollectionTags,
+            Expr::col((Tags, tags::Column::Id))
+                .equals((CollectionTags, collection_tags::Column::TagId))
+        )
+        .group_by_col(tag_groups::Column::Name)
+        .group_by_col((CollectionTags, collection_tags::Column::CollectionId))
+        .take();
+
+    Query::select()
+        .column((Collections, collections::Column::Id))
+        .column((Collections, collections::Column::Name))
+        .column((Collections, collections::Column::Description))
+        .column((Collections, collections::Column::Created))
+        .from(Collections)
+        .join(
+            JoinType::LeftJoin,
+            CollectionCreators,
+            Expr::col((CollectionCreators, collection_creators::Column::CollectionId))
+                .equals((Collections, collections::Column::Id))
+        )
+        .join(
+            JoinType::LeftJoin,
+            Creators,
+            Expr::col((Creators, creators::Column::Id))
+                .equals((CollectionCreators, collection_creators::Column::CreatorId))
+        )
+        .expr_as(
+            Expr::cust("COALESCE(json_agg(DISTINCT creators.name) FILTER (WHERE collection_creators.collection_id = collections.id), '[]')"),
+            Alias::new("creators"))
+        .join(
+            JoinType::LeftJoin,
+            MediaCollection,
+            Expr::col((MediaCollection, media_collection::Column::CollectionId))
+                .equals((Collections, collections::Column::Id))
+        )
+        .join(
+            JoinType::LeftJoin,
+            Media,
+            Expr::col((Media, media::Column::Id))
+                .equals((MediaCollection, media_collection::Column::MediaId))
+        )
+        .expr_as(
+            Expr::cust("COALESCE(json_agg(media.id ORDER BY media_collection.ord) FILTER (WHERE media_collection.collection_id = collections.id), '[]')"),
+            Alias::new("media"))
+        .join_subquery(
+            JoinType::LeftJoin,
+            tag_query.to_owned(),
+            Alias::new("t"),
+            Expr::cust("t.collection_id = collections.id")
+        )
+        .expr_as(
+            Expr::cust("COALESCE(JSON_OBJECT_AGG(t.name, ts) FILTER (WHERE t.collection_id = collections.id), '{}')"),
+            Alias::new("tag_groups")
+        )
+        .group_by_col((Collections, collections::Column::Id))
+        .group_by_col((Collections, collections::Column::Created))
+        // .group_by_col((MediaCollection, media_collection::Column::Ord))
+        .order_by((Collections, collections::Column::Created), Order::Desc)
+        // .order_by((MediaCollection, media_collection::Column::Ord), Order::Asc)
+        .take()
+}
+
+pub fn collection(id: i64) -> SelectStatement{
+    base_collection()
+        .and_where(Expr::col((Collections, collections::Column::Id))
             .eq(id))
         .take()
 }

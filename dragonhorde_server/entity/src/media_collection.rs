@@ -10,6 +10,7 @@ pub struct Model {
     pub media_id: i64,
     #[sea_orm(primary_key, auto_increment = false)]
     pub collection_id: i64,
+    pub ord: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

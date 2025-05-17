@@ -58,6 +58,11 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::search::search_query))
         .routes(routes!(endpoints::tags::search_tags))
         .routes(routes!(endpoints::autocomplete::autocomplete))
+        .routes(routes!(endpoints::collection::get_collections))
+        .routes(routes!(endpoints::collection::get_collection_id))
+        .routes(routes!(endpoints::collection::patch_collection_id))
+
+
 
         .split_for_parts();
 
