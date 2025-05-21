@@ -126,10 +126,25 @@ pub struct SearchResult {
     pub result: Vec<ApiMedia>,
 }
 
-async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<Option<ApiMedia>, AppError> {
+async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
     let q = db.get_database_backend().build(&queries::media_item(id));
-    let found_media = ApiMedia::find_by_statement(q).one(db).await?;
-    Ok(found_media)
+    match ApiMedia::find_by_statement(q).one(db).await? {
+        None => Err(AppError::NotFound(format!(
+            "media with id {} not found",
+            id
+        ))),
+        Some(m) => Ok(m),
+    }
+}
+
+async fn check_media_exists(id: i64, db: &DatabaseConnection) -> Result<media::Model, AppError> {
+    match Media::find_by_id(id).one(db).await? {
+        None => Err(AppError::NotFound(format!(
+            "media with id {} not found",
+            id
+        ))),
+        Some(m) => Ok(m),
+    }
 }
 
 #[utoipa::path(get, path = "/v1/media", params(Pagination), responses((status = OK, body = SearchResult)), tags = ["media"])]
@@ -247,10 +262,19 @@ pub async fn post_media(
     }
 
     let hash = sha256(&file);
-    
-    match Media::find().filter(media::Column::Sha256.eq(&hash)).one(&state.conn).await? {
+
+    match Media::find()
+        .filter(media::Column::Sha256.eq(&hash))
+        .one(&state.conn)
+        .await?
+    {
         None => {}
-        Some(_) => {return Err(AppError::Exists(format!("media with sha256 {} already exists", &hash)))}
+        Some(_) => {
+            return Err(AppError::Exists(format!(
+                "media with sha256 {} already exists",
+                &hash
+            )));
+        }
     }
 
     let mut file_name: std::path::PathBuf = std::path::PathBuf::new();
@@ -293,7 +317,7 @@ pub async fn post_media(
 
     Ok((
         StatusCode::OK,
-        Json(Some(load_media_item(new_model.id, &state.conn).await?.unwrap())),
+        Json(Some(load_media_item(new_model.id, &state.conn).await?)),
     ))
 }
 
@@ -303,6 +327,7 @@ pub async fn update_media_item(
     Path(id): Path<i64>,
     Json(payload): Json<ApiMedia>,
 ) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
+    check_media_exists(id, &state.conn).await?;
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
 
@@ -331,7 +356,7 @@ pub async fn update_media_item(
 
     Ok((
         StatusCode::OK,
-        Json(load_media_item(id, &state.conn).await?.unwrap()),
+        Json(load_media_item(id, &state.conn).await?),
     ))
 }
 
@@ -341,11 +366,8 @@ pub async fn media_item_patch(
     Path(id): Path<i64>,
     Json(payload): Json<ApiMedia>,
 ) -> Result<StatusCode, AppError> {
-    let item = match load_media_item(id, &state.conn).await?{
-        None => {return Err(AppError::NotFound(format!("media with id {} not found", id)))}
-        Some(item) => item,
-    };
-    
+    let item = load_media_item(id, &state.conn).await?;
+
     let txn: DatabaseTransaction = state.conn.begin().await?;
     let new_model = Media::update(media::ActiveModel {
         id: Set(id),
@@ -368,18 +390,16 @@ pub async fn media_item_patch(
     Ok(StatusCode::OK)
 }
 
-#[utoipa::path(get, path = "/v1/media/{id}", responses((status = OK, body = ApiMedia)), tags = ["media"])]
+#[utoipa::path(get, path = "/v1/media/{id}", responses((status = OK, body = ApiMedia)), tags = ["media"]
+)]
 pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
-    match load_media_item(id, &state.conn).await? {
-        None => {Err(AppError::NotFound(format!("media with id {} not found", id)))}
-        Some(m) => {Ok((
-            StatusCode::OK,
-            Json(m),
-        ))}
-    }
+    Ok((
+        StatusCode::OK,
+        Json(load_media_item(id, &state.conn).await?),
+    ))
 }
 
 #[utoipa::path(get, path = "/v1/media/by_hash/{hash}", responses((status = OK, body = ApiMedia)), tags = ["media"])]
@@ -391,13 +411,15 @@ pub async fn get_media_item_by_hash(
     q = queries::media_by_sha(q, &id);
 
     let statement = state.conn.get_database_backend().build(&q);
-    let found_media = ApiMedia::find_by_statement(statement).one(&state.conn).await?;
+    let found_media = ApiMedia::find_by_statement(statement)
+        .one(&state.conn)
+        .await?;
     match found_media {
-        None => {Err(AppError::NotFound(format!("media with id {} not found", id)))}
-        Some(m) => {Ok((
-            StatusCode::OK,
-            Json(m),
-        ))}
+        None => Err(AppError::NotFound(format!(
+            "media with id {} not found",
+            id
+        ))),
+        Some(m) => Ok((StatusCode::OK, Json(m))),
     }
 }
 
@@ -421,17 +443,9 @@ pub struct Binary(String);
 #[utoipa::path(get, path = "/v1/media/{id}/file", responses((status = OK, body = Binary, content_type = "application/octet")), tags = ["media"])]
 pub async fn get_media_file(
     state: State<AppState>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> Result<(StatusCode, Response), AppError> {
-    let media_item: media::Model = match Media::find_by_id(id).one(&state.conn).await? {
-        Some(media_item) => media_item,
-        None => {
-            return Ok((
-                StatusCode::NOT_FOUND,
-                format!("Media ID {:?}", id).into_response(),
-            ));
-        }
-    };
+    let media_item = check_media_exists(id, &state.conn).await?;
 
     let path = &state
         .storage_dir
@@ -466,17 +480,9 @@ pub async fn get_media_file(
 #[utoipa::path(get, path = "/v1/media/{id}/thumbnail",responses((status = OK, body = Binary, content_type = "application/octet")), tags = ["media"])]
 pub async fn get_media_thumbnail(
     state: State<AppState>,
-    Path(id): Path<i32>,
+    Path(id): Path<i64>,
 ) -> Result<(StatusCode, Response), AppError> {
-    let media_item: media::Model = match Media::find_by_id(id).one(&state.conn).await? {
-        Some(media_item) => media_item,
-        None => {
-            return Ok((
-                StatusCode::NOT_FOUND,
-                format!("Media ID {:?}", id).into_response(),
-            ));
-        }
-    };
+    let media_item = check_media_exists(id, &state.conn).await?;
 
     let mut data: Vec<u8> = Vec::new();
 
