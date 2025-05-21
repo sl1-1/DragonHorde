@@ -1,29 +1,19 @@
-use crate::endpoints::media::{ApiMedia, SearchResult};
+use crate::api_models::{ApiMedia, Pagination, SearchQuery, SearchResult};
 use crate::error::AppError;
 use crate::queries::{base_media, media_from_search, search_creator};
-use crate::{AppState, queries};
-use axum::Json;
+use crate::{queries, AppState};
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::Json;
 use axum_extra::extract::Query;
 use sea_orm::{ConnectionTrait, FromQueryResult};
-use serde::Deserialize;
-use utoipa::IntoParams;
 
-#[derive(Debug, IntoParams, Deserialize)]
-pub struct SearchQuery {
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    creators: Vec<String>,
-}
-
-#[utoipa::path(get, path = "/v1/search", params(SearchQuery, crate::endpoints::media::Pagination), responses((status = OK, body = SearchResult)), tags = ["search"]
+#[utoipa::path(get, path = "/v1/search", params(SearchQuery, Pagination), responses((status = OK, body = SearchResult)), tags = ["search"]
 )]
 pub async fn search_query(
     state: State<AppState>,
     query: Query<SearchQuery>,
-    pagination: Query<crate::endpoints::media::Pagination>,
+    pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
     dbg!(&query);
     let mut q = queries::base_search_query();

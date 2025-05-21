@@ -1,59 +1,18 @@
-use crate::endpoints::collection::{ApiCollection, CollectionResult};
-use crate::endpoints::media::{ApiMedia, DataVector, Pagination, SearchResult};
+pub(crate) use crate::api_models::api_creator::{ApiCreator, CreatorsResults};
+use crate::api_models::api_media::ApiMedia;
+use crate::api_models::{ApiCollection, CollectionResult, Pagination, SearchResult};
 use crate::error::AppError;
-use crate::queries::{base_media, collections_by_creator, media_by_creator, media_from_search, media_uncollected, pagination, search_creator};
-use crate::{AppState, queries};
-use axum::Json;
+use crate::queries::{base_media, collections_by_creator, media_by_creator, media_from_search, media_uncollected};
+use crate::{queries, AppState};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use chrono::{DateTime, FixedOffset};
+use axum::Json;
 use entity::{creators, creators::Entity as Creators};
-use entity::{media_collection, media_collection::Entity as MediaCollection};
 use sea_orm::{
-    ConnectionTrait, EntityTrait, FromJsonQueryResult, FromQueryResult,
+    ConnectionTrait, EntityTrait, FromQueryResult,
     QuerySelect, RelationTrait,
 };
 use sea_query::{Expr, JoinType};
-use serde::{Deserialize, Serialize};
-
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
-)]
-pub struct DataVectorI64(pub Vec<i64>);
-impl Default for DataVectorI64 {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(
-    utoipa::ToSchema,
-    Clone,
-    Debug,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    FromQueryResult,
-    FromJsonQueryResult,
-)]
-pub struct ApiCreator {
-    #[schema(read_only, value_type = i64)]
-    pub id: Option<i64>,
-    /// date-time that this item was created, if known
-    pub created: Option<DateTime<FixedOffset>>,
-    pub name: Option<String>,
-    #[schema(value_type = Option<Vec<String>>)]
-    #[serde(default)]
-    pub aliases: Option<DataVector>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct CreatorsResults {
-    pub result: Vec<ApiCreator>,
-}
 
 #[utoipa::path(get, path = "/v1/creators", responses((status = OK, body = CreatorsResults)), tags = ["creators"])]
 pub async fn get_creators(

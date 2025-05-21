@@ -1,62 +1,19 @@
-use crate::endpoints::media::{DataMap, DataVector, Pagination};
-use crate::endpoints::tags::TagQuery;
+use crate::api_models::ApiCollection;
+use crate::api_models::Pagination;
 use crate::error::AppError;
-use crate::{AppState, queries};
-use axum::Json;
+use crate::{queries, AppState};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use chrono::{DateTime, FixedOffset};
-use entity::media_collection::Model;
-use entity::{collections, collections::Entity as Collections, media_creators};
+use axum::Json;
+use entity::{collections, collections::Entity as Collections};
 use entity::{media_collection, media_collection::Entity as MediaCollection};
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult,
+    ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult,
     IntoActiveModel, Set, TransactionTrait,
 };
-use sea_query::OnConflict;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use utoipa::IntoParams;
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
-)]
-pub struct DataVectorI64(pub Vec<i64>);
-impl Default for DataVectorI64 {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(
-    utoipa::ToSchema,
-    Clone,
-    Debug,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    FromQueryResult,
-    FromJsonQueryResult,
-)]
-pub struct ApiCollection {
-    #[schema(read_only, value_type = i64)]
-    pub id: Option<i64>,
-    /// date-time that this item was created, if known
-    pub created: Option<DateTime<FixedOffset>>,
-    pub name: Option<String>,
-    #[schema(value_type = Option<Vec<String>>)]
-    #[serde(default)]
-    pub creators: Option<DataVector>,
-    #[serde(default)]
-    #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
-    pub tag_groups: Option<DataMap>,
-    /// Description of this item, if available
-    pub description: Option<String>,
-    #[schema(value_type = Option<Vec<i64>>)]
-    #[serde(default)]
-    pub media: Option<DataVectorI64>,
-}
 
 #[serde_with::skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]

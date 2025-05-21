@@ -1,130 +1,33 @@
 use sea_orm::ColumnTrait;
+mod collection_funcs;
 mod creator_funcs;
 mod source_funcs;
 mod tag_funcs;
-mod collection_funcs;
 
+use crate::api_models::{ApiMedia, DataMap, DataVector, Pagination, SearchResult};
+use crate::endpoints::media::collection_funcs::{collections_delete, collections_insert};
 use crate::endpoints::media::creator_funcs::{creator_delete, creators_insert};
 use crate::endpoints::media::source_funcs::{sources_delete, sources_insert};
 use crate::error::AppError;
-use crate::{AppState, queries};
+use crate::{queries, AppState};
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{StatusCode, header};
+use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::{Json, extract};
-use chrono::{DateTime, FixedOffset, Utc};
+use axum::{extract, Json};
 use dragonhorde_common::hash::{perceptual, sha256};
 use entity::{media, media::Entity as Media};
-use image::ImageReader;
 use image::imageops::Lanczos3;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult, QueryFilter, Set, TransactionTrait};
+use image::ImageReader;
+use sea_orm::{
+    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    FromQueryResult, QueryFilter, Set, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
-use utoipa::{IntoParams, ToSchema};
-use entity::media::Model;
-use crate::endpoints::collection::DataVectorI64;
-use crate::endpoints::media::collection_funcs::{collections_delete, collections_insert};
-
-#[derive(IntoParams, Deserialize)]
-pub struct Pagination {
-    /// Number of Results per page
-    pub(crate) per_page: Option<u64>,
-    /// Last object of previous results, provide to get next results
-    pub(crate) last: Option<u64>,
-}
-
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-    FromJsonQueryResult,
-)]
-pub struct DataVector(pub Vec<String>);
-impl Default for DataVector {
-    fn default() -> Self {
-        DataVector(Vec::new())
-    }
-}
-
-#[derive(
-    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
-)]
-pub struct DataVectorI32(pub Vec<i32>);
-impl Default for DataVectorI32 {
-    fn default() -> Self {
-        Self(Vec::new())
-    }
-}
-
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult,
-)]
-pub struct DataMap(pub BTreeMap<String, Vec<String>>);
-
-impl Default for DataMap {
-    fn default() -> Self {
-        DataMap(BTreeMap::default())
-    }
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(
-    utoipa::ToSchema,
-    Clone,
-    Debug,
-    PartialEq,
-    Serialize,
-    Deserialize,
-    FromQueryResult,
-    FromJsonQueryResult,
-)]
-pub struct ApiMedia {
-    #[schema(read_only, value_type = i64)]
-    pub id: Option<i64>,
-    #[schema(read_only, value_type = String)]
-    pub storage_uri: Option<String>,
-    #[schema(read_only, value_type = String)]
-    pub sha256: Option<String>,
-    #[schema(read_only, value_type = String)]
-    pub perceptual_hash: Option<String>,
-    /// date-time that this item was uploaded
-    #[schema(read_only, value_type = DateTime<FixedOffset>)]
-    pub uploaded: Option<DateTime<FixedOffset>>,
-    /// date-time that this item was created, if known
-    pub created: Option<DateTime<FixedOffset>>,
-    pub title: Option<String>,
-    #[schema(value_type = Option<Vec<String>>)]
-    #[serde(default)]
-    pub creators: Option<DataVector>,
-    /// Known source locations for this item
-    #[schema(value_type = Option<Vec<String>>)]
-    #[serde(default)]
-    pub sources: Option<DataVector>,
-    /// Collections this item is in
-    #[schema(value_type = Option<Vec<String>>)]
-    #[serde(default)]
-    pub collections: Option<DataVector>,
-    #[serde(default)]
-    #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
-    pub tag_groups: Option<DataMap>,
-    /// Description of this item, if available
-    pub description: Option<String>,
-}
-
-#[serde_with::skip_serializing_none]
-#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub result: Vec<ApiMedia>,
-}
+use utoipa::ToSchema;
 
 async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
     let q = db.get_database_backend().build(&queries::media_item(id));

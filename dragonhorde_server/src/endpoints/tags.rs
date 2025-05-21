@@ -1,16 +1,15 @@
 use crate::error::AppError;
-use crate::{AppState, queries};
-use axum::Json;
-use axum::extract::{State};
-use axum_extra::extract::Query;
+use crate::AppState;
+use axum::extract::State;
 use axum::http::StatusCode;
+use axum::Json;
+use axum_extra::extract::Query;
+use entity::media_tags;
+use entity::{tags, tags::Entity as Tags};
 use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use sea_query::{JoinType, Order};
 use serde::Deserialize;
 use utoipa::IntoParams;
-use entity::{tags, tags::Entity as Tags};
-use entity::{tag_groups, tag_groups::Entity as TagGroups};
-use entity::{media_tags, media_tags::Entity as MediaTags};
 
 #[derive(IntoParams, Debug, Deserialize)]
 pub struct TagQuery {
