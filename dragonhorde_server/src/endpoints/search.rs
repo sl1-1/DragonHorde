@@ -1,6 +1,6 @@
 use crate::endpoints::media::{ApiMedia, SearchResult};
 use crate::error::AppError;
-use crate::queries::search_creator;
+use crate::queries::{base_media, media_from_search, search_creator};
 use crate::{AppState, queries};
 use axum::Json;
 use axum::extract::State;
@@ -26,7 +26,7 @@ pub async fn search_query(
     pagination: Query<crate::endpoints::media::Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
     dbg!(&query);
-    let mut q = queries::base_media();
+    let mut q = queries::base_search_query();
     if !query.tags.is_empty() {
         let tags: Vec<String> = query
             .tags
@@ -52,7 +52,10 @@ pub async fn search_query(
         q = search_creator(q, query.creators.clone());
     }
     q = queries::pagination(q, pagination.0);
-    let statement = state.conn.get_database_backend().build(&q);
+    let mut media_q = base_media();
+    media_q = media_from_search(media_q, q);
+    
+    let statement = state.conn.get_database_backend().build(&media_q);
     let found_media = ApiMedia::find_by_statement(statement)
         .all(&state.conn)
         .await?;

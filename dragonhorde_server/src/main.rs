@@ -2,15 +2,13 @@ mod endpoints;
 pub mod error;
 mod queries;
 
-use axum::Router;
-use axum::routing::get;
 use sea_orm::{Database, DatabaseConnection};
 use std::env;
 use axum::extract::DefaultBodyLimit;
 use tokio::{self, net::TcpListener};
 use tower_http::trace::{self, TraceLayer};
 use tracing::Level;
-use utoipa_axum::{routes, PathItemExt, router::OpenApiRouter};
+use utoipa_axum::{routes, router::OpenApiRouter};
 use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(Clone)]
@@ -55,12 +53,21 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::media::get_media_item))
         .routes(routes!(endpoints::media::get_media_file))
         .routes(routes!(endpoints::media::get_media_thumbnail))
+        .routes(routes!(endpoints::media::get_media_item_by_hash))
         .routes(routes!(endpoints::search::search_query))
         .routes(routes!(endpoints::tags::search_tags))
         .routes(routes!(endpoints::autocomplete::autocomplete))
         .routes(routes!(endpoints::collection::get_collections))
         .routes(routes!(endpoints::collection::get_collection_id))
         .routes(routes!(endpoints::collection::patch_collection_id))
+        .routes(routes!(endpoints::collection::collection_id_add))
+        .routes(routes!(endpoints::collection::post_collection))
+        .routes(routes!(endpoints::creators::get_creators))
+        .routes(routes!(endpoints::creators::get_creators_id))
+        .routes(routes!(endpoints::creators::get_creators_collection))
+        .routes(routes!(endpoints::creators::get_creators_uncollected))
+        .routes(routes!(endpoints::creators::get_creators_media))
+
 
 
 
@@ -69,22 +76,6 @@ async fn main() -> anyhow::Result<()> {
     let app = router
         .merge(SwaggerUi::new("/swagger-ui")
             .url("/api-docs/openapi.json", api.clone()))
-
-
-    // let app = Router::new()
-    //     .route(
-    //         "/v1/media",
-    //         get(endpoints::media::get_media).post(endpoints::media::post_media),
-    //     )
-    //     .route(
-    //         "/v1/media/{id}",
-    //         get(endpoints::media::get_media_item).put(endpoints::media::update_media_item).patch(endpoints::media::media_item_patch),
-    //     )
-    //     .route("/v1/media/{id}/file", get(endpoints::media::get_media_file))
-    //     .route("/v1/media/{id}/thumbnail", get(endpoints::media::get_media_thumbnail))
-    //     .route("/v1/search", get(endpoints::search::search_query))
-    //     .route("/v1/tags", get(endpoints::tags::search_tags))
-
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))

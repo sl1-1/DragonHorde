@@ -1,16 +1,22 @@
-use std::collections::HashSet;
 use crate::endpoints::media::{DataMap, DataVector, Pagination};
+use crate::endpoints::tags::TagQuery;
 use crate::error::AppError;
 use crate::{AppState, queries};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{DateTime, FixedOffset};
-use entity::{collections, collections::Entity as Collections};
-use entity::{media_collection, media_collection::Entity as MediaCollection};
-use sea_orm::{ConnectionTrait, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult, IntoActiveModel, Set, TransactionTrait};
-use serde::{Deserialize, Serialize};
 use entity::media_collection::Model;
+use entity::{collections, collections::Entity as Collections, media_creators};
+use entity::{media_collection, media_collection::Entity as MediaCollection};
+use sea_orm::{
+    ConnectionTrait, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult,
+    IntoActiveModel, Set, TransactionTrait,
+};
+use sea_query::OnConflict;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use utoipa::IntoParams;
 
 #[derive(
     Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
@@ -78,16 +84,62 @@ pub async fn get_collections(
     ))
 }
 
+#[utoipa::path(post, path = "/v1/collection", request_body = ApiCollection, responses((status = OK, body = ApiCollection)), tags = ["collection"])]
+pub async fn post_collection(
+    state: State<AppState>,
+    Json(payload): Json<ApiCollection>,
+) -> Result<(StatusCode, Json<ApiCollection>), AppError> {
+    let txn: DatabaseTransaction = state.conn.begin().await?;
+    let new_model = Collections::insert(collections::ActiveModel {
+        name: Set(payload.name.unwrap()),
+        description: Set(payload.description),
+        ..Default::default()
+    })
+    .exec(&txn)
+    .await?;
+
+    if let Some(media) = payload.media {
+        for (i, m) in media.0.iter().enumerate() {
+            MediaCollection::insert(media_collection::ActiveModel {
+                media_id: Set(*m),
+                collection_id: Set(new_model.last_insert_id),
+                ord: Set(Some(i as i32)),
+            })
+            .exec(&txn)
+            .await?;
+        }
+    }
+
+    txn.commit().await?;
+
+    let mut q = queries::base_collection();
+    q = queries::collection(q, new_model.last_insert_id);
+    q = queries::collection_with_media(q);
+    let statement = state
+        .conn
+        .get_database_backend()
+        .build(&q);
+    let found_collection = ApiCollection::find_by_statement(statement)
+        .one(&state.conn)
+        .await?
+        .unwrap();
+
+    Ok((StatusCode::OK, Json(found_collection)))
+}
+
 #[utoipa::path(get, path = "/v1/collection/{id}", responses((status = OK, body = ApiCollection)), tags = ["collection"])]
 pub async fn get_collection_id(
     state: State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<(StatusCode, Json<ApiCollection>), AppError> {
-    let q = state
+    let mut q = queries::base_collection();
+    q = queries::collection(q, id);
+    q = queries::collection_with_media(q);
+        let statement = state
         .conn
         .get_database_backend()
-        .build(&queries::collection(id));
-    let found_collection = ApiCollection::find_by_statement(q).one(&state.conn).await?;
+        .build(&q);
+    let found_collection = ApiCollection::find_by_statement(statement).one(&state.conn).await?;
     Ok((
         StatusCode::OK,
         Json(found_collection.expect("collection not found")),
@@ -100,11 +152,14 @@ pub async fn patch_collection_id(
     Path(id): Path<i64>,
     Json(payload): Json<ApiCollection>,
 ) -> Result<(StatusCode, Json<ApiCollection>), AppError> {
-    let q = state
+    let mut q = queries::base_collection();
+    q = queries::collection(q, id);
+    q = queries::collection_with_media(q);
+    let statement = state
         .conn
         .get_database_backend()
-        .build(&queries::collection(id));
-    let found_collection = ApiCollection::find_by_statement(q)
+        .build(&q);
+    let found_collection = ApiCollection::find_by_statement(statement)
         .one(&state.conn)
         .await?
         .expect("collection not found");
@@ -124,40 +179,80 @@ pub async fn patch_collection_id(
 
         let to_delete = current_hash.symmetric_difference(&new_hash);
         for item in to_delete {
-            MediaCollection::delete_by_id((*item, id)).exec(&txn).await?;
+            MediaCollection::delete_by_id((*item, id))
+                .exec(&txn)
+                .await?;
         }
-        
+
         for (i, m) in media.0.iter().enumerate() {
             match MediaCollection::find_by_id((*m, id)).one(&txn).await? {
                 None => {
                     MediaCollection::insert(media_collection::ActiveModel {
                         media_id: Set(*m),
                         collection_id: Set(id),
-                        ord: Set(i as i32),
-                    }).exec(&txn).await?;
+                        ord: Set(Some(i as i32)),
+                    })
+                    .exec(&txn)
+                    .await?;
                 }
                 Some(entry) => {
                     let mut active = entry.into_active_model();
-                    active.ord = Set(i as i32);
+                    active.ord = Set(Some(i as i32));
                     MediaCollection::update(active).exec(&txn).await?;
                 }
             }
         }
-
     }
 
     txn.commit().await?;
 
-    let q = state
+    let mut q = queries::base_collection();
+    q = queries::collection(q, id);
+    q = queries::collection_with_media(q);
+    let statement = state
         .conn
         .get_database_backend()
-        .build(&queries::collection(id));
-    let found_collection = ApiCollection::find_by_statement(q)
+        .build(&q);
+    let found_collection = ApiCollection::find_by_statement(statement)
         .one(&state.conn)
         .await?
         .unwrap();
 
     Ok((StatusCode::OK, Json(found_collection)))
+}
+
+#[derive(utoipa::ToSchema, IntoParams, Debug, Deserialize, Clone)]
+pub struct AddItem {
+    media_id: i64,
+    ord: i32,
+}
+
+#[derive(utoipa::ToSchema, IntoParams, Debug, Deserialize)]
+pub struct AddQuery {
+    media: Vec<AddItem>,
+}
+
+#[utoipa::path(post, path = "/v1/collection/{id}/add", request_body = AddQuery, responses((status = OK)), tags = ["collection"])]
+pub async fn collection_id_add(
+    state: State<AppState>,
+    Path(id): Path<i64>,
+    Json(payload): Json<AddQuery>,
+) -> Result<StatusCode, AppError> {
+    let entries: Vec<media_collection::ActiveModel> = payload
+        .media
+        .clone()
+        .into_iter()
+        .map(|(i)| media_collection::ActiveModel {
+            media_id: Set(i.media_id),
+            collection_id: Set(id),
+            ord: Set(Some(i.ord)),
+        })
+        .collect();
+
+    MediaCollection::insert_many(entries)
+        .exec_with_returning_many(&state.conn)
+        .await?;
+    Ok(StatusCode::CREATED)
 }
 
 // #[utoipa::path(post, path = "/v1/media", request_body(content = UploadForm, content_type = "multipart/form-data"),responses((status = OK, body = ApiMedia)), tags = ["media"])]

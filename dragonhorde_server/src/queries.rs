@@ -1,16 +1,21 @@
-use sea_query::{Alias, Expr, ExprTrait, JoinType, Order, PgFunc, Query, SelectStatement};
-use sea_query::extension::postgres::PgExpr;
 use crate::endpoints::media::Pagination;
-use entity::{tags, tags::Entity as Tags};
-use entity::{tag_groups, tag_groups::Entity as TagGroups};
-use entity::{sources, sources::Entity as Sources};
+use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+use entity::{collection_tags, collection_tags::Entity as CollectionTags};
+use entity::{collections, collections::Entity as Collections};
+use entity::{creator_alias, tags, tags::Entity as Tags};
 use entity::{creators, creators::Entity as Creators};
+use entity::{media_collection, media_collection::Entity as MediaCollection};
 use entity::{media_creators, media_creators::Entity as MediaCreators};
 use entity::{media_tags, media_tags::Entity as MediaTags};
-use entity::{collections, collections::Entity as Collections};
-use entity::{collection_tags, collection_tags::Entity as CollectionTags};
-use entity::{media_collection, media_collection::Entity as MediaCollection};
-use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+use entity::{sources, sources::Entity as Sources};
+use entity::{tag_groups, tag_groups::Entity as TagGroups};
+use sea_orm::Select;
+use sea_orm::prelude::Uuid;
+use sea_query::extension::postgres::PgExpr;
+use sea_query::{
+    Alias, Cond, ConditionalStatement, Expr, ExprTrait, Func, JoinType, Order, PgFunc, Query,
+    SelectStatement,
+};
 
 use entity::{media, media::Entity as Media};
 // pub (crate) const MEDIA_QUERY: &str = r#"
@@ -40,7 +45,7 @@ use entity::{media, media::Entity as Media};
 //             GROUP BY media.id
 //             LIMIT $1 OFFSET $2
 // "#;
-// 
+//
 // pub(crate) const MEDIA_QUERY_ID: &str = r#"
 // SELECT media.id,
 //        storage_uri,
@@ -75,20 +80,18 @@ pub fn base_media() -> SelectStatement {
         .column((TagGroups, tag_groups::Column::Name))
         .expr_as(
             PgFunc::json_agg(Expr::col((Tags, tags::Column::Tag))),
-            Alias::new("ts")
+            Alias::new("ts"),
         )
         .from(TagGroups)
         .join(
             JoinType::LeftJoin,
             Tags,
-            Expr::col((Tags, tags::Column::Group))
-                .equals((TagGroups, tag_groups::Column::Id))
+            Expr::col((Tags, tags::Column::Group)).equals((TagGroups, tag_groups::Column::Id)),
         )
         .join(
             JoinType::LeftJoin,
             MediaTags,
-            Expr::col((Tags, tags::Column::Id))
-                .equals((MediaTags, media_tags::Column::TagId))
+            Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)),
         )
         .group_by_col(tag_groups::Column::Name)
         .group_by_col((MediaTags, media_tags::Column::MediaId))
@@ -104,18 +107,18 @@ pub fn base_media() -> SelectStatement {
         .column(media::Column::Title)
         .column((Media, media::Column::Description))
         .from(Media)
-        .join(
-            JoinType::Join,
-            MediaTags,
-            Expr::col((MediaTags, media_tags::Column::MediaId))
-                .equals((Media, media::Column::Id))
-        )
-        .join(
-            JoinType::Join,
-            Tags,
-            Expr::col((Tags, tags::Column::Id))
-                .equals((MediaTags, media_tags::Column::TagId))
-        )
+        // .join(
+        //     JoinType::LeftJoin,
+        //     MediaTags,
+        //     Expr::col((MediaTags, media_tags::Column::MediaId))
+        //         .equals((Media, media::Column::Id))
+        // )
+        // .join(
+        //     JoinType::LeftJoin,
+        //     Tags,
+        //     Expr::col((Tags, tags::Column::Id))
+        //         .equals((MediaTags, media_tags::Column::TagId))
+        // )
         .join(
             JoinType::LeftJoin,
             MediaCreators,
@@ -169,49 +172,128 @@ pub fn base_media() -> SelectStatement {
         .group_by_col((Media, media::Column::Id))
         .group_by_col((Media, media::Column::Uploaded))
         .order_by((Media, media::Column::Uploaded), Order::Desc)
-        .take()    
+        .take()
+}
+
+pub fn media_from_search(mut q: SelectStatement, search: SelectStatement) -> SelectStatement {
+    q.cond_where(Cond::all().add(Expr::col((Media, media::Column::Id)).in_subquery(search)))
+        .take()
+}
+
+pub fn base_search_query() -> SelectStatement {
+    Query::select()
+        .column((Media, media::Column::Id))
+        .from(Media)
+        .join(
+            JoinType::LeftJoin,
+            MediaTags,
+            Expr::col((MediaTags, media_tags::Column::MediaId)).equals((Media, media::Column::Id)),
+        )
+        .join(
+            JoinType::LeftJoin,
+            Tags,
+            Expr::col((Tags, tags::Column::Id)).equals((MediaTags, media_tags::Column::TagId)),
+        )
+        .join(
+            JoinType::LeftJoin,
+            MediaCollection,
+            Expr::col((MediaCollection, media_collection::Column::MediaId))
+                .equals((Media, media::Column::Id)),
+        )
+        .join(
+            JoinType::LeftJoin,
+            Collections,
+            Expr::col((Collections, collections::Column::Id))
+                .equals((MediaCollection, media_collection::Column::CollectionId)),
+        )
+        // .expr_as(
+        //     Expr::cust("COALESCE(json_agg(DISTINCT collections.name) FILTER (WHERE media_collection.media_id = media.id), '[]')"),
+        //     Alias::new("collections"))
+        .group_by_col((Media, media::Column::Id))
+        .take()
 }
 
 pub fn search_has_tags(mut q: SelectStatement, has: Vec<String>) -> SelectStatement {
     q.and_having(
         PgFunc::array_agg(Expr::col(tags::Column::Tag))
-            .contains(Expr::value(has).cast_as(Alias::new("citext[]")))
+            .contains(Expr::value(has).cast_as(Alias::new("citext[]"))),
     )
-        .take()
+    .take()
 }
 
 pub fn search_not_tags(mut q: SelectStatement, has_not: Vec<String>) -> SelectStatement {
-    q.and_having(
-        ExprTrait::not(
-            PgFunc::array_agg(Expr::col(tags::Column::Tag))
-                .contains(
-                    Expr::value(has_not).cast_as(Alias::new("citext[]")))
-        )
-    )
-        .take()
+    q.and_having(ExprTrait::not(
+        PgFunc::array_agg(Expr::col(tags::Column::Tag))
+            .contains(Expr::value(has_not).cast_as(Alias::new("citext[]"))),
+    ))
+    .take()
 }
 
 pub fn search_creator(mut q: SelectStatement, creators: Vec<String>) -> SelectStatement {
-    q.and_having(Expr::col((Creators, creators::Column::Name)).is_in(creators))
-        .group_by_col((Creators, creators::Column::Name))
+    q.join(
+        JoinType::LeftJoin,
+        MediaCreators,
+        Expr::col((MediaCreators, media_creators::Column::MediaId))
+            .equals((Media, media::Column::Id)),
+    )
+    .join(
+        JoinType::LeftJoin,
+        Creators,
+        Expr::col((Creators, creators::Column::Id))
+            .equals((MediaCreators, media_creators::Column::CreatorId)),
+    )
+    .and_having(
+        Func::lower(Expr::col((Creators, creators::Column::Name))).is_in(
+            creators
+                .into_iter()
+                .map(|s| s.to_lowercase())
+                .collect::<Vec<String>>(),
+        ),
+    )
+    .group_by_col((Creators, creators::Column::Name))
+    .take()
+}
+
+pub fn media_by_creator(mut q: SelectStatement, creator: i64) -> SelectStatement {
+    q.join(
+        JoinType::LeftJoin,
+        MediaCreators,
+        Expr::col((MediaCreators, media_creators::Column::MediaId))
+            .equals((Media, media::Column::Id)),
+    )
+    .join(
+        JoinType::LeftJoin,
+        Creators,
+        Expr::col((Creators, creators::Column::Id))
+            .equals((MediaCreators, media_creators::Column::CreatorId)),
+    )
+    .and_having(Expr::col((Creators, creators::Column::Id)).eq(creator))
+    .group_by_col((Creators, creators::Column::Id))
+    .take()
+}
+
+pub fn media_uncollected(mut q: SelectStatement) -> SelectStatement {
+    q.and_having(Expr::col((MediaCollection, media_collection::Column::CollectionId)).is_null())
+        .group_by_col((MediaCollection, media_collection::Column::CollectionId))
+        .take()
+}
+
+pub fn media_by_sha(mut q: SelectStatement, sha: &String) -> SelectStatement {
+    q.and_having(Expr::col((Media, media::Column::Sha256)).eq(sha))
         .take()
 }
 
 pub fn pagination(mut q: SelectStatement, pagination: Pagination) -> SelectStatement {
     let per_page = pagination.per_page.unwrap_or(50);
     let offset = pagination.last.unwrap_or(0);
-    q.limit(per_page)
-        .offset(offset)
-        .take()
+    q.limit(per_page).offset(offset).take()
 }
 
-pub fn media_item(id: i64) -> SelectStatement{
+pub fn media_item(id: i64) -> SelectStatement {
     base_media()
-        .and_where(Expr::col((Media, media::Column::Id))
-            .eq(id))
+        .and_where(Expr::col((Media, media::Column::Id)).eq(id))
         .take()
 }
-
 
 pub fn base_collection() -> SelectStatement {
     let tag_query = Query::select()
@@ -219,20 +301,19 @@ pub fn base_collection() -> SelectStatement {
         .column((TagGroups, tag_groups::Column::Name))
         .expr_as(
             PgFunc::json_agg(Expr::col((Tags, tags::Column::Tag))),
-            Alias::new("ts")
+            Alias::new("ts"),
         )
         .from(TagGroups)
         .join(
             JoinType::LeftJoin,
             Tags,
-            Expr::col((Tags, tags::Column::Group))
-                .equals((TagGroups, tag_groups::Column::Id))
+            Expr::col((Tags, tags::Column::Group)).equals((TagGroups, tag_groups::Column::Id)),
         )
         .join(
             JoinType::LeftJoin,
             CollectionTags,
             Expr::col((Tags, tags::Column::Id))
-                .equals((CollectionTags, collection_tags::Column::TagId))
+                .equals((CollectionTags, collection_tags::Column::TagId)),
         )
         .group_by_col(tag_groups::Column::Name)
         .group_by_col((CollectionTags, collection_tags::Column::CollectionId))
@@ -259,21 +340,7 @@ pub fn base_collection() -> SelectStatement {
         .expr_as(
             Expr::cust("COALESCE(json_agg(DISTINCT creators.name) FILTER (WHERE collection_creators.collection_id = collections.id), '[]')"),
             Alias::new("creators"))
-        .join(
-            JoinType::LeftJoin,
-            MediaCollection,
-            Expr::col((MediaCollection, media_collection::Column::CollectionId))
-                .equals((Collections, collections::Column::Id))
-        )
-        .join(
-            JoinType::LeftJoin,
-            Media,
-            Expr::col((Media, media::Column::Id))
-                .equals((MediaCollection, media_collection::Column::MediaId))
-        )
-        .expr_as(
-            Expr::cust("COALESCE(json_agg(media.id ORDER BY media_collection.ord) FILTER (WHERE media_collection.collection_id = collections.id), '[]')"),
-            Alias::new("media"))
+
         .join_subquery(
             JoinType::LeftJoin,
             tag_query.to_owned(),
@@ -292,9 +359,32 @@ pub fn base_collection() -> SelectStatement {
         .take()
 }
 
-pub fn collection(id: i64) -> SelectStatement{
-    base_collection()
-        .and_where(Expr::col((Collections, collections::Column::Id))
-            .eq(id))
+pub fn collection_with_media(mut q: SelectStatement) -> SelectStatement {
+    q.join(
+        JoinType::LeftJoin,
+        MediaCollection,
+        Expr::col((MediaCollection, media_collection::Column::CollectionId))
+            .equals((Collections, collections::Column::Id))
+    )
+        .join(
+            JoinType::LeftJoin,
+            Media,
+            Expr::col((Media, media::Column::Id))
+                .equals((MediaCollection, media_collection::Column::MediaId))
+        )
+        .expr_as(
+            Expr::cust("COALESCE(json_agg(media.id ORDER BY media_collection.ord) FILTER (WHERE media_collection.collection_id = collections.id), '[]')"),
+            Alias::new("media"))
+        .take()
+}
+
+pub fn collection(mut q: SelectStatement, id: i64) -> SelectStatement {
+    q.and_where(Expr::col((Collections, collections::Column::Id)).eq(id))
+        .take()
+}
+
+pub fn collections_by_creator(mut q: SelectStatement, creator_id: i64) -> SelectStatement {
+    q.and_having(Expr::col((Creators, creators::Column::Id)).eq(creator_id))
+        .group_by_col((Creators, creators::Column::Id))
         .take()
 }

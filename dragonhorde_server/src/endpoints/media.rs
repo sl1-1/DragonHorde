@@ -1,6 +1,8 @@
+use sea_orm::ColumnTrait;
 mod creator_funcs;
 mod source_funcs;
 mod tag_funcs;
+mod collection_funcs;
 
 use crate::endpoints::media::creator_funcs::{creator_delete, creators_insert};
 use crate::endpoints::media::source_funcs::{sources_delete, sources_insert};
@@ -16,16 +18,16 @@ use dragonhorde_common::hash::{perceptual, sha256};
 use entity::{media, media::Entity as Media};
 use image::ImageReader;
 use image::imageops::Lanczos3;
-use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    FromJsonQueryResult, FromQueryResult, Set, TransactionTrait,
-};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait, FromJsonQueryResult, FromQueryResult, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
 use utoipa::{IntoParams, ToSchema};
+use entity::media::Model;
+use crate::endpoints::collection::DataVectorI64;
+use crate::endpoints::media::collection_funcs::{collections_delete, collections_insert};
 
 #[derive(IntoParams, Deserialize)]
 pub struct Pagination {
@@ -52,6 +54,17 @@ impl Default for DataVector {
         DataVector(Vec::new())
     }
 }
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, FromJsonQueryResult,
+)]
+pub struct DataVectorI32(pub Vec<i32>);
+impl Default for DataVectorI32 {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult,
 )]
@@ -113,10 +126,10 @@ pub struct SearchResult {
     pub result: Vec<ApiMedia>,
 }
 
-async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
+async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<Option<ApiMedia>, AppError> {
     let q = db.get_database_backend().build(&queries::media_item(id));
     let found_media = ApiMedia::find_by_statement(q).one(db).await?;
-    Ok(found_media.expect("Media not found"))
+    Ok(found_media)
 }
 
 #[utoipa::path(get, path = "/v1/media", params(Pagination), responses((status = OK, body = SearchResult)), tags = ["media"])]
@@ -234,6 +247,11 @@ pub async fn post_media(
     }
 
     let hash = sha256(&file);
+    
+    match Media::find().filter(media::Column::Sha256.eq(&hash)).one(&state.conn).await? {
+        None => {}
+        Some(_) => {return Err(AppError::Exists(format!("media with sha256 {} already exists", &hash)))}
+    }
 
     let mut file_name: std::path::PathBuf = std::path::PathBuf::new();
     file_name.set_file_name(&hash);
@@ -258,8 +276,10 @@ pub async fn post_media(
     media_tag_update(payload.tag_groups, &new_model, &txn, true).await?;
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
-
-    let mut out = File::create_new(state.storage_dir.clone().join(file_name))?;
+    if let Some(collections) = payload.collections {
+        collections_insert(&collections.0, new_model.id, &txn).await?;
+    }
+    let mut out = File::create(state.storage_dir.clone().join(file_name))?;
     out.write_all(&file)?;
 
     let mut path = state.thumbnail_dir.clone();
@@ -273,7 +293,7 @@ pub async fn post_media(
 
     Ok((
         StatusCode::OK,
-        Json(Some(load_media_item(new_model.id, &state.conn).await?)),
+        Json(Some(load_media_item(new_model.id, &state.conn).await?.unwrap())),
     ))
 }
 
@@ -301,12 +321,17 @@ pub async fn update_media_item(
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 
+    if let Some(collections) = payload.collections {
+        collections_insert(&collections.0, new_model.id, &txn).await?;
+        collections_delete(&collections.0, new_model.id, &txn).await?;
+    }
+
     txn.commit().await?;
     //End of Transaction
 
     Ok((
         StatusCode::OK,
-        Json(load_media_item(id, &state.conn).await?),
+        Json(load_media_item(id, &state.conn).await?.unwrap()),
     ))
 }
 
@@ -316,7 +341,11 @@ pub async fn media_item_patch(
     Path(id): Path<i64>,
     Json(payload): Json<ApiMedia>,
 ) -> Result<StatusCode, AppError> {
-    let item = load_media_item(id, &state.conn).await?;
+    let item = match load_media_item(id, &state.conn).await?{
+        None => {return Err(AppError::NotFound(format!("media with id {} not found", id)))}
+        Some(item) => item,
+    };
+    
     let txn: DatabaseTransaction = state.conn.begin().await?;
     let new_model = Media::update(media::ActiveModel {
         id: Set(id),
@@ -344,10 +373,32 @@ pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
-    Ok((
-        StatusCode::OK,
-        Json(load_media_item(id, &state.conn).await?),
-    ))
+    match load_media_item(id, &state.conn).await? {
+        None => {Err(AppError::NotFound(format!("media with id {} not found", id)))}
+        Some(m) => {Ok((
+            StatusCode::OK,
+            Json(m),
+        ))}
+    }
+}
+
+#[utoipa::path(get, path = "/v1/media/by_hash/{hash}", responses((status = OK, body = ApiMedia)), tags = ["media"])]
+pub async fn get_media_item_by_hash(
+    state: State<AppState>,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<ApiMedia>), AppError> {
+    let mut q = queries::base_media();
+    q = queries::media_by_sha(q, &id);
+
+    let statement = state.conn.get_database_backend().build(&q);
+    let found_media = ApiMedia::find_by_statement(statement).one(&state.conn).await?;
+    match found_media {
+        None => {Err(AppError::NotFound(format!("media with id {} not found", id)))}
+        Some(m) => {Ok((
+            StatusCode::OK,
+            Json(m),
+        ))}
+    }
 }
 
 fn extension_to_mime(ext: &str) -> &'static str {
