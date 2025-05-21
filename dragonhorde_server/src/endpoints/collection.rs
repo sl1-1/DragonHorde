@@ -1,8 +1,7 @@
 use crate::api_models::ApiCollection;
-use crate::api_models::Pagination;
 use crate::error::AppError;
 use crate::{queries, AppState};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use entity::{collections, collections::Entity as Collections};
