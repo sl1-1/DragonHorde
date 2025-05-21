@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use entity::{collections, media_collection, media_collection::Entity as MediaCollection, collections::Entity as Collections};
+use entity::{collections, collections::Entity as Collections, media_collection, media_collection::Entity as MediaCollection};
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, EntityTrait, JoinType, QuerySelect, RelationTrait, Set,
 };

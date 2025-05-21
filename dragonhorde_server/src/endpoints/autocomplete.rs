@@ -1,21 +1,18 @@
-use std::cmp::PartialEq;
 use crate::error::AppError;
-use crate::{AppState, queries};
-use axum::Json;
-use axum::extract::{State};
-use axum_extra::extract::Query;
+use crate::AppState;
+use axum::extract::State;
 use axum::http::StatusCode;
-use sea_orm::{ColumnTrait, DeriveColumn, EntityTrait, EnumIter, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
+use axum::Json;
+use axum_extra::extract::Query;
+use entity::{creators, creators::Entity as Creators};
+use entity::media_creators;
+use entity::media_tags;
+use entity::{tags, tags::Entity as Tags};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
 use sea_query::{JoinType, Order};
 use serde::{Deserialize, Serialize};
-use utoipa::__dev::ComposeSchema;
-use utoipa::{IntoParams, PartialSchema, ToSchema};
-use utoipa::openapi::{RefOr, Schema};
-use entity::{tags, tags::Entity as Tags};
-use entity::{tag_groups, tag_groups::Entity as TagGroups};
-use entity::{media_tags, media_tags::Entity as MediaTags};
-use entity::{creators, creators::Entity as Creators};
-use entity::{media_creators, media_creators::Entity as MediaCreators};
+use std::cmp::PartialEq;
+use utoipa::IntoParams;
 
 #[derive(utoipa::ToSchema, Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 enum TagType {
