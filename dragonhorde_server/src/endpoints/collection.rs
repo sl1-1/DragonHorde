@@ -197,7 +197,7 @@ pub async fn collection_id_add(
         .media
         .clone()
         .into_iter()
-        .map(|(i)| media_collection::ActiveModel {
+        .map(|i| media_collection::ActiveModel {
             media_id: Set(i.media_id),
             collection_id: Set(id),
             ord: Set(Some(i.ord)),
