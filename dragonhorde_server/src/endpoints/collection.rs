@@ -21,13 +21,11 @@ pub struct CollectionResult {
     pub result: Vec<ApiCollection>,
 }
 
-#[utoipa::path(get, path = "/v1/collection", params(Pagination), responses((status = OK, body = CollectionResult)), tags = ["collection"])]
+#[utoipa::path(get, path = "/v1/collection", responses((status = OK, body = CollectionResult)), tags = ["collection"])]
 pub async fn get_collections(
     state: State<AppState>,
-    pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<CollectionResult>), AppError> {
-    let mut q = queries::base_collection();
-    // q = queries::pagination(q, pagination.0);
+    let q = queries::base_collection();
     let statement = state.conn.get_database_backend().build(&q);
     let found_collections = ApiCollection::find_by_statement(statement)
         .all(&state.conn)
@@ -121,7 +119,7 @@ pub async fn patch_collection_id(
         .await?
         .expect("collection not found");
     let txn: DatabaseTransaction = state.conn.begin().await?;
-    let new_model = Collections::update(collections::ActiveModel {
+    Collections::update(collections::ActiveModel {
         id: Set(id),
         name: Set(payload.name.or(found_collection.name.clone()).unwrap()),
         description: Set(payload.description.or(found_collection.description.clone())),
