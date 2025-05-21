@@ -23,7 +23,7 @@ pub async fn creators_insert(
     creators_in.dedup_by_key(|c| c.to_lowercase());
     if !creators_in.is_empty() {
         dbg!(&creators_in);
-        // Look through exisiting Creator Aliases, returning id and aliases that exist
+        // Look through existing Creator Aliases, returning id and aliases that exist
         let existing: Vec<(i64, String)> = CreatorAlias::find()
             .filter(
                 creator_alias::Column::Alias.is_in(
