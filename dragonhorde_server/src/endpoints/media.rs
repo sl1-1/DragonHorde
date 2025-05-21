@@ -65,15 +65,14 @@ async fn media_tag_update(
     db: &DatabaseTransaction,
     create: bool,
 ) -> Result<(), AppError> {
-    if let Some(tag_groups) = &tags {
-        let tag_tuple = tag_funcs::groups_to_tuple(&tag_groups.0);
+    if let Some(tag_groups) = tags {
+        let tag_tuple = tag_funcs::groups_to_tuple(tag_groups.0);
         if !tag_tuple.is_empty() {
-            let new_groups = tag_funcs::tag_group_insert(&tag_tuple, db).await?;
-            let inserted_tags = tag_funcs::tags_insert(&tag_tuple, &new_groups, db).await?;
-            tag_funcs::tags_insert_relations(new_model.id, inserted_tags, db).await?;
+            let inserted_tags = tag_funcs::tags_insert(&tag_tuple, db).await?;
+            tag_funcs::media_tags_insert(new_model.id, inserted_tags, db).await?;
         }
         if !create {
-            tag_funcs::tags_update(tag_tuple, &new_model, db).await?;
+            tag_funcs::media_tags_delete(tag_tuple, &new_model, db).await?;
         }
     }
     Ok(())
