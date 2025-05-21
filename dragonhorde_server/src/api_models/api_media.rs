@@ -52,7 +52,7 @@ pub struct ApiMedia {
     pub description: Option<String>,
 }
 
-#[serde_with::skip_serializing_none]
+#[skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
     pub result: Vec<ApiMedia>,
