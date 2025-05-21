@@ -28,6 +28,7 @@ use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
 use utoipa::ToSchema;
+use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 
 async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
     let q = db.get_database_backend().build(&queries::media_item(id));
@@ -113,45 +114,23 @@ async fn media_sources_update(
     Ok(())
 }
 
-#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(utoipa::ToSchema, Debug, TryFromMultipart)]
 #[allow(unused)]
-struct UploadForm {
-    data: ApiMedia,
-    #[schema(format = Binary, content_media_type = "application/octet-stream")]
-    file: String,
+pub struct UploadForm {
+    #[schema(value_type = ApiMedia)]
+    data: String,
+    #[schema(value_type = Vec<u8>, format = Binary, content_media_type = "application/octet-stream")]
+    file: FieldData<Bytes>,
 }
 
 #[utoipa::path(post, path = "/v1/media", request_body(content = UploadForm, content_type = "multipart/form-data"),responses((status = OK, body = ApiMedia)), tags = ["media"])]
 pub async fn post_media(
     state: State<AppState>,
-    mut multipart: extract::Multipart,
+    TypedMultipart(UploadForm { data, file }): TypedMultipart<UploadForm>,
 ) -> Result<(StatusCode, Json<Option<ApiMedia>>), AppError> {
-    let mut payload_option: Option<ApiMedia> = None;
-    let mut file_option: Option<Vec<u8>> = None;
+    let mut payload: ApiMedia = serde_json::from_str(data.as_str())?;
 
-    //Unpack the multipart form into the metadata and file
-    while let Some(field) = multipart.next_field().await? {
-        let name = field.name().unwrap().to_string();
-        println!("name: {}", name);
-        if name == "data" {
-            let text = field.text().await?;
-            payload_option = Some(serde_json::from_str(text.as_str())?);
-        } else if name == "file" {
-            file_option = Some(Vec::from(field.bytes().await?));
-        }
-    }
-
-    let mut payload = match payload_option {
-        Some(payload) => payload,
-        None => return Ok((StatusCode::BAD_REQUEST, Json(None))),
-    };
-
-    let file = match file_option {
-        Some(file) => file,
-        None => return Ok((StatusCode::BAD_REQUEST, Json(None))),
-    };
-
-    let reader = ImageReader::new(Cursor::new(&file)).with_guessed_format()?;
+    let reader = ImageReader::new(Cursor::new(&file.contents)).with_guessed_format()?;
     let image_format = reader
         .format()
         .expect("Image Format")
@@ -164,7 +143,7 @@ pub async fn post_media(
         payload.perceptual_hash = Some(perceptual(&im))
     }
 
-    let hash = sha256(&file);
+    let hash = sha256(&file.contents);
 
     match Media::find()
         .filter(media::Column::Sha256.eq(&hash))
@@ -206,16 +185,25 @@ pub async fn post_media(
     if let Some(collections) = payload.collections {
         collections_insert(&collections.0, new_model.id, &txn).await?;
     }
-    let mut out = File::create(state.storage_dir.clone().join(file_name))?;
-    out.write_all(&file)?;
+    let media_path = state.storage_dir.clone().join(&file_name);
+    let mut media_file = File::create(&media_path)?;
+    media_file.write_all(&file.contents)?;
 
-    let mut path = state.thumbnail_dir.clone();
-    path.push(new_model.sha256);
-    path.set_extension("webp");
+    let mut thumbnail_path = state.thumbnail_dir.clone();
+    thumbnail_path.push(new_model.sha256);
+    thumbnail_path.set_extension("webp");
     let thumbnail = im.resize(400, 400, Lanczos3);
-    thumbnail.save(path)?;
+    thumbnail.save(&thumbnail_path)?;
 
-    txn.commit().await?;
+    match txn.commit().await {
+        Ok(_) => {}
+        Err(e) => {
+            //If the transaction fails, remove the files
+            std::fs::remove_file(media_path).ok();
+            std::fs::remove_file(thumbnail_path).ok();
+            return Err(AppError::from(e));
+        }
+    }
     //End of Transaction
 
     Ok((

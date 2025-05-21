@@ -24,3 +24,4 @@ utoipa-axum = "0.2.0"
 utoipa = { version = "5.3.1", features = ["axum_extras", "chrono"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"]}
 chrono = "0.4.41"
+axum_typed_multipart = "0.16.2"
