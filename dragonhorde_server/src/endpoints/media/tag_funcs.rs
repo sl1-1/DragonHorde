@@ -5,7 +5,7 @@ use entity::{tag_groups, tag_groups::Entity as TagGroups};
 use entity::{tags, tags::Entity as Tags};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{ColumnTrait, SelectColumns};
-use sea_orm::{DatabaseTransaction, EntityTrait, ModelTrait, QueryFilter, QuerySelect, RelationTrait, Set};
+use sea_orm::{DatabaseTransaction, EntityTrait, QueryFilter, QuerySelect, RelationTrait, Set};
 use sea_query::JoinType;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
