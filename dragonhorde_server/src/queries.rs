@@ -10,7 +10,7 @@ use entity::{tag_groups, tag_groups::Entity as TagGroups};
 use entity::{tags, tags::Entity as Tags};
 use sea_query::extension::postgres::PgExpr;
 use sea_query::{
-    Alias, Cond, ConditionalStatement, Expr, ExprTrait, Func, JoinType, Order, PgFunc, Query,
+    Alias, Cond, Expr, ExprTrait, Func, JoinType, Order, PgFunc, Query,
     SelectStatement,
 };
 
