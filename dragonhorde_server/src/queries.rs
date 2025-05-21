@@ -216,7 +216,7 @@ pub fn base_search_query() -> SelectStatement {
 pub fn search_has_tags(mut q: SelectStatement, has: Vec<String>) -> SelectStatement {
     q.and_having(
         PgFunc::array_agg(Expr::col(tags::Column::Tag))
-            .contains(Expr::value(has).cast_as(Alias::new("citext[]"))),
+            .contains(Expr::value(has)),
     )
     .take()
 }
@@ -224,7 +224,7 @@ pub fn search_has_tags(mut q: SelectStatement, has: Vec<String>) -> SelectStatem
 pub fn search_not_tags(mut q: SelectStatement, has_not: Vec<String>) -> SelectStatement {
     q.and_having(ExprTrait::not(
         PgFunc::array_agg(Expr::col(tags::Column::Tag))
-            .contains(Expr::value(has_not).cast_as(Alias::new("citext[]"))),
+            .contains(Expr::value(has_not)),
     ))
     .take()
 }

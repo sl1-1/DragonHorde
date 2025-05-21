@@ -13,7 +13,7 @@ pub fn groups_to_tuple(tags_in: &BTreeMap<String, Vec<String>>) -> Vec<(String, 
     let mut ltags: Vec<(String, String)> = tags_in
         .iter()
         .map(|tg| -> Vec<(String, String)> {
-            tg.1.iter().map(|t| (tg.0.clone(), t.clone())).collect()
+            tg.1.iter().map(|t| (tg.0.clone().to_lowercase(), t.clone().to_lowercase())).collect()
         })
         .flatten()
         .collect();

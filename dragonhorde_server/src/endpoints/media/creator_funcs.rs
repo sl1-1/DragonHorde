@@ -1,28 +1,38 @@
 use crate::error::AppError;
-use entity::{creators, creators::Entity as Creators};
 use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
+use entity::{creators, creators::Entity as Creators};
 
 use entity::{media_creators, media_creators::Entity as MediaCreators};
-use sea_orm::{QueryFilter, SelectColumns};
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, EntityTrait, JoinType, QuerySelect, RelationTrait, Set,
 };
-use sea_query::{Expr, Func};
+use sea_orm::{QueryFilter, SelectColumns};
 
+
+/// Check if the creators provided exist in the creator_alias table
+/// creator_alias.alias is stored as all lower case to make comparisons easier
+/// When creating the creators table entry, maintain case, as it isn't used for searching
 pub async fn creators_insert(
     creators_in: Vec<String>,
     id: i64,
     db: &DatabaseTransaction,
 ) -> Result<Vec<media_creators::Model>, AppError> {
     let mut creators_in = creators_in.clone();
-    creators_in.sort_by_key(| c| c.to_lowercase());
-    creators_in.dedup_by_key(| c| c.to_lowercase());
-    if !creators_in.is_empty(){
+    creators_in.sort_by_key(|c| c.to_lowercase());
+    creators_in.dedup_by_key(|c| c.to_lowercase());
+    if !creators_in.is_empty() {
         dbg!(&creators_in);
         // Look through exisiting Creator Aliases, returning id and aliases that exist
         let existing: Vec<(i64, String)> = CreatorAlias::find()
-            .filter(Expr::expr(Func::lower(Expr::column(creator_alias::Column::Alias))).is_in(&creators_in.iter().map(|s| s.clone().to_lowercase()).collect::<Vec<String>>()))
+            .filter(
+                creator_alias::Column::Alias.is_in(
+                    &creators_in
+                        .iter()
+                        .map(|s| s.clone().to_lowercase())
+                        .collect::<Vec<String>>(),
+                ),
+            )
             .select_only()
             .select_column(creator_alias::Column::Creator)
             .select_column(creator_alias::Column::Alias)
@@ -30,14 +40,13 @@ pub async fn creators_insert(
             .all(db)
             .await?;
         println!("{}", &creators_in[0]);
-        
-        let (existing_id, existing_name): (Vec<_>, Vec<_>) =  existing.into_iter().unzip();
-        
-        let existing_name: Vec<String> = existing_name.into_iter().map(|s| s.to_lowercase()).collect();
+
+        let (existing_id, existing_name): (Vec<_>, Vec<_>) = existing.into_iter().unzip();
         
         //Create the models to be inserted that don't exist.
         // Filtering using the results from the first step
-        let creators_to_insert: Vec<creators::ActiveModel> = creators_in.clone()
+        let creators_to_insert: Vec<creators::ActiveModel> = creators_in
+            .clone()
             .into_iter()
             .filter(|c| !existing_name.contains(&c.to_lowercase()))
             .map(|s| creators::ActiveModel {
@@ -45,7 +54,7 @@ pub async fn creators_insert(
                 ..Default::default()
             })
             .collect();
-        
+
         dbg!(&creators_to_insert);
         let mut creators_inserted = Vec::new();
         if creators_to_insert.len() > 0 {
@@ -59,10 +68,10 @@ pub async fn creators_insert(
                 .exec_with_returning_keys(db)
                 .await?;
         }
-        
+
         //Merge the newly created creators, and the existing creator ids
         creators_inserted.extend(existing_id);
-        
+
         //Create the new relations
         let creators_relations: Vec<media_creators::ActiveModel> = creators_inserted
             .into_iter()
@@ -71,7 +80,7 @@ pub async fn creators_insert(
                 creator_id: Set(c),
             })
             .collect();
-        
+
         dbg!(&creators_relations);
         //Insert the relations
         Ok(MediaCreators::insert_many(creators_relations)
@@ -80,7 +89,6 @@ pub async fn creators_insert(
     } else {
         Ok(Vec::new())
     }
-
 }
 
 pub async fn creator_delete(
@@ -88,11 +96,17 @@ pub async fn creator_delete(
     id: i64,
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
-    
     let out: Vec<i64> = MediaCreators::find()
         .join(JoinType::LeftJoin, media_creators::Relation::Creators.def())
         .join(JoinType::LeftJoin, creators::Relation::CreatorAlias.def())
-        .filter(creator_alias::Column::Alias.is_not_in(creators_in))
+        .filter(
+            creator_alias::Column::Alias.is_not_in(
+                creators_in
+                    .into_iter()
+                    .map(|s| s.to_lowercase())
+                    .collect::<Vec<String>>(),
+            ),
+        )
         .filter(media_creators::Column::MediaId.eq(id))
         .select_only()
         .select_column(creator_alias::Column::Creator)
@@ -100,10 +114,7 @@ pub async fn creator_delete(
         .all(db)
         .await?;
     MediaCreators::delete_many()
-        .filter(
-            media_creators::Column::CreatorId
-                .is_in(out),
-        )
+        .filter(media_creators::Column::CreatorId.is_in(out))
         .filter(media_creators::Column::MediaId.eq(id))
         .exec(db)
         .await?;
