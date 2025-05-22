@@ -19,6 +19,7 @@ pub(crate) use crate::api_models::{DataMap, DataVector};
     FromQueryResult,
     FromJsonQueryResult,
 )]
+#[schema(title="MediaItem")]
 pub struct ApiMedia {
     #[schema(read_only, value_type = i64)]
     pub id: Option<i64>,

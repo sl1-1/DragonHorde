@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
     FromQueryResult,
     FromJsonQueryResult,
 )]
+#[schema(title="CreatorItem")]
 pub struct ApiCreator {
     #[schema(read_only, value_type = i64)]
     pub id: Option<i64>,
