@@ -16,6 +16,8 @@ use sea_query::{
 
 use crate::api_models::Pagination;
 use entity::{media, media::Entity as Media};
+use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
+use crate::endpoints::collection;
 // pub (crate) const MEDIA_QUERY: &str = r#"
 // SELECT media.id,
 //        storage_uri,
@@ -384,5 +386,38 @@ pub fn collection(mut q: SelectStatement, id: i64) -> SelectStatement {
 pub fn collections_by_creator(mut q: SelectStatement, creator_id: i64) -> SelectStatement {
     q.and_having(Expr::col((Creators, creators::Column::Id)).eq(creator_id))
         .group_by_col((Creators, creators::Column::Id))
+        .take()
+}
+
+pub fn base_creator() -> SelectStatement {
+    Query::select()
+        .from(Creators)
+        .column((Creators, creators::Column::Id))
+        .column((Creators, creators::Column::Name))
+        .column((Creators, creators::Column::Created))
+        .join(
+            JoinType::LeftJoin,
+            CreatorAlias,
+            Expr::col((CreatorAlias, creator_alias::Column::Creator))
+                .equals((Creators, creators::Column::Id))
+        )
+        .expr_as(
+            Expr::cust("COALESCE(json_agg(DISTINCT creator_alias.alias) FILTER (WHERE creator_alias.creator = creators.id), '[]')"),
+            Alias::new("aliases"))
+        .group_by_col((Creators, creators::Column::Id))
+        .take()
+}
+
+pub fn creator_by_id(mut q: SelectStatement, id: i64) -> SelectStatement {
+    q.and_where(Expr::col((Creators, creators::Column::Id)).eq(id)).take()
+}
+
+pub fn creator_by_alias(mut q: SelectStatement, alias: &str) -> SelectStatement {
+    let alias_select = Query::select()
+        .from(CreatorAlias)
+        .column((CreatorAlias, creator_alias::Column::Creator))
+        .and_where(Expr::col((CreatorAlias, creator_alias::Column::Alias)).eq(alias))
+        .take();
+    q.cond_where(Cond::all().add(Expr::col((Creators, creators::Column::Id)).in_subquery(alias_select)))
         .take()
 }

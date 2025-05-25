@@ -68,6 +68,8 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::creators::get_creators_collection))
         .routes(routes!(endpoints::creators::get_creators_uncollected))
         .routes(routes!(endpoints::creators::get_creators_media))
+        .routes(routes!(endpoints::creators::get_creators_by_alias))
+        .routes(routes!(endpoints::creators::patch_creators_id))
 
 
 
