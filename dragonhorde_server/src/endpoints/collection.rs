@@ -1,3 +1,4 @@
+use sea_orm::QueryFilter;
 use crate::api_models::ApiCollection;
 use crate::error::AppError;
 use crate::{queries, AppState};
@@ -6,13 +7,13 @@ use axum::http::StatusCode;
 use axum::Json;
 use entity::{collections, collections::Entity as Collections};
 use entity::{media_collection, media_collection::Entity as MediaCollection};
-use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult,
-    IntoActiveModel, Set, TransactionTrait,
-};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, IntoActiveModel, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use utoipa::IntoParams;
+use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
+use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+
 
 #[serde_with::skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,6 +53,24 @@ pub async fn post_collection(
     })
     .exec(&txn)
     .await?;
+    
+    if let Some(creators) = payload.creators {
+        let creators: Vec<String> = creators.0.into_iter().map(|s| s.to_lowercase()).collect();
+        let found_creators = CreatorAlias::find()
+        .filter(creator_alias::Column::Alias.is_in(&creators))
+            .all(&txn).await?;
+        if creators.len() != found_creators.len() {
+            return Err(AppError::BadRequest("Creator not found".to_string()));
+        } 
+        for c in found_creators {
+            CollectionCreators::insert(
+                collection_creators::ActiveModel{
+                    creator_id: Set(c.creator),
+                    collection_id: Set(new_model.last_insert_id)
+                }
+            ).exec(&txn).await?;
+        }
+    }
 
     if let Some(media) = payload.media {
         for (i, m) in media.0.iter().enumerate() {
