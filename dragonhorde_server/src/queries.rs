@@ -101,7 +101,8 @@ pub fn base_media() -> SelectStatement {
         .column((Media, media::Column::Id))
         .column(media::Column::StorageUri)
         .column(media::Column::Sha256)
-        .column(media::Column::PerceptualHash)
+        // .column(media::Column::PerceptualHash)
+        .expr(Expr::col(media::Column::PerceptualHash).cast_as(Alias::new("bigint")))
         .column(media::Column::Uploaded)
         .column((Media, media::Column::Created))
         .column(media::Column::Title)
@@ -419,5 +420,22 @@ pub fn creator_by_alias(mut q: SelectStatement, alias: &str) -> SelectStatement 
         .and_where(Expr::col((CreatorAlias, creator_alias::Column::Alias)).eq(alias))
         .take();
     q.cond_where(Cond::all().add(Expr::col((Creators, creators::Column::Id)).in_subquery(alias_select)))
+        .take()
+}
+
+
+pub fn search_hash(mut q: SelectStatement, hash: i64, distance: Option<i64>) -> SelectStatement {
+    Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash);
+        q.and_where(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash).lt(distance.unwrap_or(10)))
+            .order_by_expr(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash), Order::Asc)
+        .take()
+}
+
+
+pub fn distance(mut q: SelectStatement, hash: i64) -> SelectStatement {
+    let a = Alias::new("distance");
+    q.expr_as(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash), a.clone())
+        .clear_order_by()
+        .order_by_expr(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash), Order::Asc)
         .take()
 }

@@ -1,6 +1,6 @@
-use crate::api_models::{ApiMedia, Pagination, SearchQuery, SearchResult};
+use crate::api_models::{ApiMedia, HashQuery, Pagination, SearchQuery, SearchResult};
 use crate::error::AppError;
-use crate::queries::{base_media, media_from_search, search_creator};
+use crate::queries::{base_media, distance, media_from_search, search_creator, search_hash};
 use crate::{queries, AppState};
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -55,4 +55,30 @@ pub async fn search_query(
             result: found_media,
         }),
     ))
+}
+
+
+#[utoipa::path(get, path = "/v1/search/hash", params(HashQuery, Pagination), responses((status = OK, body = SearchResult)), tags = ["search"]
+)]
+pub async fn hash_search(
+    state: State<AppState>,
+    query: Query<HashQuery>,
+    pagination: Query<Pagination>,
+) -> Result<Json<SearchResult>, AppError> {
+    dbg!(&query);
+    let mut q = queries::base_search_query();
+    q = search_hash(q, query.hash, query.max_distance);
+    q = queries::pagination(q, pagination.0);
+    let mut media_q = base_media();
+    media_q = media_from_search(media_q, q);
+    media_q = distance(media_q, query.hash);
+    let statement = state.conn.get_database_backend().build(&media_q);
+    let found_media = ApiMedia::find_by_statement(statement)
+        .all(&state.conn)
+        .await?;
+    Ok(
+        Json(SearchResult {
+            result: found_media,
+        }),
+    )
 }

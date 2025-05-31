@@ -10,13 +10,14 @@ pub struct Model {
     pub id: i64,
     pub storage_uri: String,
     pub sha256: String,
-    pub perceptual_hash: Option<String>,
     pub uploaded: DateTimeWithTimeZone,
     pub created: Option<DateTimeWithTimeZone>,
     pub title: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub description: Option<String>,
     pub r#type: Option<String>,
+    #[sea_orm(select_as = "bigint", save_as = "bit(64)")]
+    pub perceptual_hash: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

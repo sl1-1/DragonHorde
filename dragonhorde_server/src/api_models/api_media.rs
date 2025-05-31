@@ -3,7 +3,7 @@ use chrono::{DateTime, FixedOffset};
 use sea_orm::{
     FromJsonQueryResult, FromQueryResult
 };
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 pub(crate) use crate::api_models::{DataMap, DataVector};
@@ -27,8 +27,9 @@ pub struct ApiMedia {
     pub storage_uri: Option<String>,
     #[schema(read_only, value_type = String)]
     pub sha256: Option<String>,
-    #[schema(read_only, value_type = String)]
-    pub perceptual_hash: Option<String>,
+    #[schema(read_only, value_type = i64)]
+    // #[serde(deserialize_with = "deserialize_perceptual_hash")]
+    pub perceptual_hash: Option<i64>,
     /// date-time that this item was uploaded
     #[schema(read_only, value_type = DateTime<FixedOffset>)]
     pub uploaded: Option<DateTime<FixedOffset>>,
@@ -51,10 +52,44 @@ pub struct ApiMedia {
     pub tag_groups: Option<DataMap>,
     /// Description of this item, if available
     pub description: Option<String>,
+    ///Distance when searching by perceptual hash
+    #[schema(read_only)]
+    pub distance: Option<f64>,
 }
 
 #[skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
     pub result: Vec<ApiMedia>,
+}
+
+fn deserialize_perceptual_hash<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    let value = Vec::deserialize(deserializer)?;
+    Ok(Some(value))
+    // // define a visitor that deserializes
+    // // `ActualData` encoded as json within a string
+    // struct JsonStringVisitor;
+    //
+    // impl<'de> de::Visitor<'de> for JsonStringVisitor {
+    //     type Value = ActualData;
+    //
+    //     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    //         formatter.write_str("a string containing json data")
+    //     }
+    //
+    //     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    //     where
+    //         E: de::Error,
+    //     {
+    //         // unfortunately we lose some typed information
+    //         // from errors deserializing the json string
+    //         serde_json::from_str(v).map_err(E::custom)
+    //     }
+    // }
+    //
+    // // use our visitor to deserialize an `ActualValue`
+    // deserializer.deserialize_any(JsonStringVisitor)
 }

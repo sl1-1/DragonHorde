@@ -4,7 +4,7 @@ use img_hash::{HasherConfig};
 use sha2::{Digest, Sha256};
 use crate::error::AppError;
 
-pub fn perceptual(im: &DynamicImage) -> String {
+pub fn perceptual(im: &DynamicImage) -> i64 {
     let image_hash = HasherConfig::with_bytes_type::<[u8; 8]>()
         .hash_alg(Gradient)
         .hash_size(8, 8)
@@ -12,11 +12,10 @@ pub fn perceptual(im: &DynamicImage) -> String {
         .to_hasher()
         .hash_image(im);
     let hash: [u8; 8] = image_hash.as_bytes().try_into().expect("Couldn't convert to bytes");
-    let phash = i64::from_be_bytes(hash);
-    format!("{:x}", phash)
+    i64::from_be_bytes(hash)
 }
 
-pub fn sha256(data: &Vec<u8>) -> String {
+pub fn sha256(data: &[u8]) -> String {
     //Hash
     let mut hasher = Sha256::new();
     hasher.update(data);

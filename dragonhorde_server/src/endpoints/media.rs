@@ -145,7 +145,7 @@ pub async fn post_media(
     let new_item: media::ActiveModel = media::ActiveModel {
         storage_uri: Set(file_name.to_string_lossy().to_string()),
         sha256: Set(hash),
-        perceptual_hash: Set(payload.perceptual_hash),
+        perceptual_hash: Set(payload.perceptual_hash.expect("perceptual_hash should be set")),
         created: Set(payload.created),
         title: Set(payload.title),
         r#type: Set(Some(image_format.extensions_str()[0].to_string())),
@@ -191,13 +191,13 @@ pub async fn update_media_item(
     Path(id): Path<i64>,
     Json(payload): Json<ApiMedia>,
 ) -> Result<Json<ApiMedia>, AppError> {
-    load_media_item_model(id, &state.conn).await?;
+    let current = load_media_item_model(id, &state.conn).await?;
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
 
     let new_model = Media::update(media::ActiveModel {
         id: Set(id),
-        perceptual_hash: Set(payload.perceptual_hash),
+        perceptual_hash: Set(payload.perceptual_hash.expect("REASON")),
         created: Set(payload.created),
         title: Set(payload.title),
         description: Set(payload.description),
@@ -232,7 +232,7 @@ pub async fn media_item_patch(
     let txn: DatabaseTransaction = state.conn.begin().await?;
     let new_model = Media::update(media::ActiveModel {
         id: Set(id),
-        perceptual_hash: Set(payload.perceptual_hash.or(item.perceptual_hash.clone())),
+        perceptual_hash: Set(payload.perceptual_hash.unwrap_or(item.perceptual_hash.clone().unwrap())),
         created: Set(payload.created.or(item.created.clone())),
         title: Set(payload.title.or(item.title.clone())),
         description: Set(payload.description.or(item.description.clone())),
