@@ -12,6 +12,7 @@ pub struct Model {
     pub name: String,
     pub description: Option<String>,
     pub created: DateTimeWithTimeZone,
+    pub parent: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -20,6 +21,14 @@ pub enum Relation {
     CollectionCreators,
     #[sea_orm(has_many = "super::collection_tags::Entity")]
     CollectionTags,
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "Column::Parent",
+        to = "Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SelfRef,
     #[sea_orm(has_many = "super::media_collection::Entity")]
     MediaCollection,
 }

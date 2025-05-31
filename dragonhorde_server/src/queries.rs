@@ -17,7 +17,7 @@ use sea_query::{
 use crate::api_models::Pagination;
 use entity::{media, media::Entity as Media};
 use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
-use crate::endpoints::collection;
+
 // pub (crate) const MEDIA_QUERY: &str = r#"
 // SELECT media.id,
 //        storage_uri,
@@ -379,6 +379,24 @@ pub fn collection_with_media(mut q: SelectStatement) -> SelectStatement {
         .take()
 }
 
+pub fn collection_with_children(mut q: SelectStatement) -> SelectStatement {
+    let child_query = Query::select()
+        .column((Collections, collections::Column::Id))
+        .column((Collections, collections::Column::Name))
+        .column((Collections, collections::Column::Description))
+        .column((Collections, collections::Column::Created))
+        .column((Collections, collections::Column::Parent))
+        .from(Collections)
+        .take();
+        // .and_where(Expr::col((Collections, collections::Column::Parent)).eq(id))
+
+    q.join_subquery(JoinType::LeftJoin, child_query.to_owned(), Alias::new("children"),  Expr::cust("children.parent = collections.id"))
+        .expr_as(
+            Expr::cust("COALESCE(json_agg(DISTINCT children)  FILTER (WHERE children.parent = collections.id), '[]')"),
+            Alias::new("children"))
+        .take()
+}
+
 pub fn collection(mut q: SelectStatement, id: i64) -> SelectStatement {
     q.and_where(Expr::col((Collections, collections::Column::Id)).eq(id))
         .take()
@@ -386,6 +404,7 @@ pub fn collection(mut q: SelectStatement, id: i64) -> SelectStatement {
 
 pub fn collections_by_creator(mut q: SelectStatement, creator_id: i64) -> SelectStatement {
     q.and_having(Expr::col((Creators, creators::Column::Id)).eq(creator_id))
+    .and_having(Expr::col((Collections, collections::Column::Parent)).is_null())
         .group_by_col((Creators, creators::Column::Id))
         .take()
 }
@@ -406,6 +425,7 @@ pub fn base_creator() -> SelectStatement {
             Expr::cust("COALESCE(json_agg(DISTINCT creator_alias.alias) FILTER (WHERE creator_alias.creator = creators.id), '[]')"),
             Alias::new("aliases"))
         .group_by_col((Creators, creators::Column::Id))
+        .order_by((Creators, creators::Column::Name), Order::Asc)
         .take()
 }
 

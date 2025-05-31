@@ -32,6 +32,10 @@ pub struct ApiCollection {
     #[schema(value_type = Option<Vec<i64>>)]
     #[serde(default)]
     pub media: Option<DataVectorI64>,
+    #[schema(no_recursion)]
+    #[serde(default)]
+    pub children: Option<Vec<ApiCollection>>,
+    pub parent: Option<i64>,
 }
 
 #[serde_with::skip_serializing_none]

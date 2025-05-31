@@ -47,6 +47,7 @@ pub async fn post_collection(
     let new_model = Collections::insert(collections::ActiveModel {
         name: Set(payload.name.unwrap()),
         description: Set(payload.description),
+        parent: Set(payload.parent),
         ..Default::default()
     })
     .exec(&txn)
@@ -89,6 +90,7 @@ pub async fn get_collection_id(
     let mut q = queries::base_collection();
     q = queries::collection(q, id);
     q = queries::collection_with_media(q);
+    q = queries::collection_with_children(q);
         let statement = state
         .conn
         .get_database_backend()
