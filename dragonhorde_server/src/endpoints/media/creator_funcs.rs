@@ -17,7 +17,7 @@ pub async fn creators_insert(
     creators_in: Vec<String>,
     id: i64,
     db: &DatabaseTransaction,
-) -> Result<Vec<media_creators::Model>, AppError> {
+) -> Result<(), AppError> {
     let mut creators_in = creators_in.clone();
     creators_in.sort_by_key(|c| c.to_lowercase());
     creators_in.dedup_by_key(|c| c.to_lowercase());
@@ -74,10 +74,19 @@ pub async fn creators_insert(
         
         creators_inserted.sort();
         creators_inserted.dedup();
-
+        
+        let existing_relations: Vec<i64> = MediaCreators::find()
+            .filter(media_creators::Column::MediaId.eq(id))
+            .filter(media_creators::Column::CreatorId.is_in(creators_inserted.clone()))
+            .select_only()
+            .column(media_creators::Column::CreatorId)
+            .into_tuple()
+            .all(db).await?;
+        
         //Create the new relations
         let creators_relations: Vec<media_creators::ActiveModel> = creators_inserted
             .into_iter()
+            .filter(|c| !existing_relations.contains(c))
             .map(|c| media_creators::ActiveModel {
                 media_id: Set(id),
                 creator_id: Set(c),
@@ -86,11 +95,13 @@ pub async fn creators_insert(
 
         dbg!(&creators_relations);
         //Insert the relations
-        Ok(MediaCreators::insert_many(creators_relations)
-            .exec_with_returning_many(db)
-            .await?)
+        if creators_relations.len() > 0 {
+            MediaCreators::insert_many(creators_relations)
+                .exec_with_returning_many(db).await?;
+        }
+        Ok(())
     } else {
-        Ok(Vec::new())
+        Ok(())
     }
 }
 

@@ -1,10 +1,9 @@
 use crate::error::AppError;
 use entity::{collections, collections::Entity as Collections, media_collection, media_collection::Entity as MediaCollection};
-use sea_orm::{
-    ColumnTrait, DatabaseTransaction, EntityTrait, JoinType, QuerySelect, RelationTrait, Set,
-};
+use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, JoinType, QuerySelect, RelationTrait, Set};
 use sea_orm::{DeriveColumn, EnumIter, QueryFilter, QueryOrder, SelectColumns};
 use sea_query::Order;
+use crate::queries;
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 enum QueryAs {
@@ -18,9 +17,23 @@ pub async fn collections_insert(
 ) -> Result<(), AppError> {
     for collection in collections_in {
         println!("{:?} {:?}", &id, &collection);
+        let collection_id: i64 = match db.query_one(queries::collection_id_by_path(collection.to_string())).await {
+            Ok(id) => match id {
+                None => {return Err(AppError::BadRequest(format!("collection {} not found", &collection)))},
+                Some(id) => id.try_get("", "id")?
+            },
+            Err(e) => {return Err(e.into())}
+        };
+        
+        //Skip existing relations. This should probably be optimized
+        match MediaCollection::find_by_id((id, collection_id)).one(db).await? {
+            None => {}
+            Some(_) => {continue}
+        }
+
         match Collections::find()
             .join(JoinType::LeftJoin, collections::Relation::MediaCollection.def())
-            .filter(collections::Column::Name.eq(collection))
+            .filter(collections::Column::Id.eq(collection_id))
             .order_by(media_collection::Column::Ord, Order::Desc)
             .select_only()
             .column(collections::Column::Id)
@@ -52,6 +65,7 @@ pub async fn collections_delete(
         .filter(collections::Column::Name.is_in(collections_in))
         .select_only()
         .select_column(collections::Column::Id)
+        .distinct()
         .into_tuple::<i64>()
         .all(db)
         .await?;
