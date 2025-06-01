@@ -71,6 +71,9 @@ pub async fn creators_insert(
 
         //Merge the newly created creators, and the existing creator ids
         creators_inserted.extend(existing_id);
+        
+        creators_inserted.sort();
+        creators_inserted.dedup();
 
         //Create the new relations
         let creators_relations: Vec<media_creators::ActiveModel> = creators_inserted
