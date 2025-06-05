@@ -65,6 +65,8 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::collection::patch_collection_id))
         .routes(routes!(endpoints::collection::collection_id_add))
         .routes(routes!(endpoints::collection::post_collection))
+        .routes(routes!(endpoints::collection::get_collection_name))
+        .routes(routes!(endpoints::collection::get_collection_path))
         .routes(routes!(endpoints::creators::get_creators))
         .routes(routes!(endpoints::creators::get_creators_id))
         .routes(routes!(endpoints::creators::get_creators_collection))

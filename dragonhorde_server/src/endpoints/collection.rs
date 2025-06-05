@@ -121,6 +121,42 @@ pub async fn get_collection_id(
     ))
 }
 
+#[utoipa::path(get, path = "/v1/collection/by_name/{name}", responses((status = OK, body = ApiCollection)), tags = ["collection"])]
+pub async fn get_collection_name(
+    state: State<AppState>,
+    Path(name): Path<String>,
+) -> Result<Json<ApiCollection>, AppError> {
+    let mut q = queries::base_collection();
+    q = queries::collection_by_name(q, &name);
+    q = queries::collection_with_media(q);
+    q = queries::collection_with_children(q);
+    let statement = state
+        .conn
+        .get_database_backend()
+        .build(&q);
+
+    match ApiCollection::find_by_statement(statement).one(&state.conn).await? {
+        None => {Err(AppError::NotFound(format!("Collection {} not found", name)))}
+        Some(found_collection) => {    Ok(
+            Json(found_collection),
+        )}
+    }
+}
+
+#[utoipa::path(get, path = "/v1/collection/by_path/{*path}", responses((status = OK, body = ApiCollection)), tags = ["collection"])]
+pub async fn get_collection_path(
+    state: State<AppState>,
+    Path(path): Path<String>,
+) -> Result<Json<ApiCollection>, AppError> {
+
+    match ApiCollection::find_by_statement(queries::collection_by_path(path.clone())).one(&state.conn).await?{
+        None => {Err(AppError::NotFound(format!("Collection {} not found", path)))}
+        Some(found_collection) => {    Ok(
+            Json(found_collection),
+        )}
+    }
+}
+
 #[utoipa::path(patch, path = "/v1/collection/{id}", request_body = ApiCollection, responses((status = OK, body = ApiCollection)), tags = ["collection"])]
 pub async fn patch_collection_id(
     state: State<AppState>,

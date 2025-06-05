@@ -402,6 +402,81 @@ pub fn collection(mut q: SelectStatement, id: i64) -> SelectStatement {
         .take()
 }
 
+pub fn collection_by_name(mut q: SelectStatement, name: &String) -> SelectStatement {
+    q.and_where(Expr::col((Collections, collections::Column::Name)).eq(name))
+        .and_having(Expr::col((Collections, collections::Column::Parent)).is_null())
+        .take()
+
+}
+
+pub fn collection_by_path(path: String) -> Statement {
+    let path_split:Vec<String> = path.split('/').map(|s| s.to_string()).collect();
+
+    Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
+SELECT "collections"."id",
+       "collections"."name",
+       "collections"."description",
+       "collections"."created",
+       COALESCE(json_agg(DISTINCT creators.name) FILTER (WHERE collection_creators.collection_id = collections.id),
+                '[]')                                                                              AS "creators",
+       COALESCE(JSON_OBJECT_AGG(t.name, ts) FILTER (WHERE t.collection_id = collections.id), '{}') AS "tag_groups",
+       COALESCE(json_agg(media.id ORDER BY media_collection.ord)
+                FILTER (WHERE media_collection.collection_id = collections.id), '[]')              AS "media",
+       COALESCE(json_agg(DISTINCT children) FILTER (WHERE children.parent = collections.id), '[]')          AS "children"
+FROM "collections"
+         LEFT JOIN "collection_creators" ON "collection_creators"."collection_id" = "collections"."id"
+         LEFT JOIN "creators" ON "creators"."id" = "collection_creators"."creator_id"
+         LEFT JOIN (SELECT "collection_tags"."collection_id", "tag_groups"."name", JSON_AGG("tags"."tag") AS "ts"
+                    FROM "tag_groups"
+                             LEFT JOIN "tags" ON "tags"."group" = "tag_groups"."id"
+                             LEFT JOIN "collection_tags" ON "tags"."id" = "collection_tags"."tag_id"
+                    GROUP BY "name", "collection_tags"."collection_id") AS "t" ON t.collection_id = collections.id
+         LEFT JOIN "media_collection" ON "media_collection"."collection_id" = "collections"."id"
+         LEFT JOIN "media" ON "media"."id" = "media_collection"."media_id"
+         LEFT JOIN (SELECT "collections"."id",
+                           "collections"."name",
+                           "collections"."description",
+                           "collections"."created",
+                           "collections"."parent"
+                    FROM "collections") AS "children" ON children.parent = collections.id
+WHERE "collections"."id" = (
+    WITH RECURSIVE cte AS (
+        SELECT id, name, parent, array[name] as path
+        FROM collections
+        UNION ALL
+        SELECT c.id, c.name, c.parent, ct.path || c.name
+        FROM cte ct JOIN
+             collections c
+             ON c.parent = ct.id
+    )
+    SELECT id
+    FROM cte
+    WHERE path = $1::varchar[]
+    )
+GROUP BY "collections"."id", "collections"."created"
+ORDER BY "collections"."created" DESC
+    "#, [path_split.into()])
+}
+
+pub fn collection_id_by_path(path: String) -> Statement {
+    let path_split:Vec<String> = path.split('/').map(|s| s.to_string()).collect();
+
+    Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
+        WITH RECURSIVE cte AS (
+        SELECT id, name, parent, array[name] as path
+        FROM collections
+        UNION ALL
+        SELECT c.id, c.name, c.parent, ct.path || c.name
+        FROM cte ct JOIN
+             collections c
+             ON c.parent = ct.id
+    )
+    SELECT id
+    FROM cte
+    WHERE path = $1::varchar[]
+    "#, [path_split.into()])
+}
+
 pub fn collections_by_creator(mut q: SelectStatement, creator_id: i64) -> SelectStatement {
     q.and_having(Expr::col((Creators, creators::Column::Id)).eq(creator_id))
     .and_having(Expr::col((Collections, collections::Column::Parent)).is_null())
