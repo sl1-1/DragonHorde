@@ -245,6 +245,11 @@ pub async fn media_item_patch(
     media_creators_update(payload.creators, &new_model, &txn).await?;
     media_sources_update(payload.sources, &new_model, &txn).await?;
 
+    if let Some(collections) = payload.collections {
+        collections_insert(&collections.0, new_model.id, &txn).await?;
+        collections_delete(&collections.0, new_model.id, &txn).await?;
+    }
+
     txn.commit().await?;
     //End of Transaction
 
