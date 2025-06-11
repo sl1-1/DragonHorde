@@ -52,3 +52,12 @@ impl Default for DataVectorI64 {
         Self(Vec::new())
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, FromJsonQueryResult)]
+pub struct DataMapI64String(pub BTreeMap<i64, String>);
+
+impl Default for DataMapI64String {
+    fn default() -> Self {
+        DataMapI64String(BTreeMap::default())
+    }
+}

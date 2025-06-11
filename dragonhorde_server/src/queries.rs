@@ -150,6 +150,9 @@ pub fn base_media() -> SelectStatement {
         .expr_as(
             Expr::cust("COALESCE(json_agg(DISTINCT collections.name) FILTER (WHERE media_collection.media_id = media.id), '[]')"),
             Alias::new("collections"))
+        .expr_as(
+            Expr::cust("COALESCE(json_object_agg(DISTINCT collections.id, collections.name) FILTER (WHERE media_collection.media_id = media.id), '{}')"),
+            Alias::new("collections_with_id"))
         .join(
             JoinType::LeftJoin,
             Sources,
@@ -211,6 +214,7 @@ pub fn base_search_query() -> SelectStatement {
         //     Expr::cust("COALESCE(json_agg(DISTINCT collections.name) FILTER (WHERE media_collection.media_id = media.id), '[]')"),
         //     Alias::new("collections"))
         .group_by_col((Media, media::Column::Id))
+        .order_by((Media, media::Column::Uploaded), Order::Desc)
         .take()
 }
 

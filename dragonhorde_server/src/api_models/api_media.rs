@@ -7,6 +7,7 @@ use serde::{de, Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 pub(crate) use crate::api_models::{DataMap, DataVector};
+use crate::api_models::{DataMapI64String};
 
 #[skip_serializing_none]
 #[derive(
@@ -47,6 +48,10 @@ pub struct ApiMedia {
     #[schema(value_type = Option<Vec<String>>)]
     #[serde(default)]
     pub collections: Option<DataVector>,
+    /// Collections this item is in
+    #[schema(value_type = Option<HashMap<i64, String>>)]
+    #[serde(default)]
+    pub collections_with_id: Option<DataMapI64String>,
     #[serde(default)]
     #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
     pub tag_groups: Option<DataMap>,
