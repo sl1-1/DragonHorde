@@ -365,12 +365,20 @@ pub fn base_collection() -> SelectStatement {
 }
 
 pub fn collection_with_media(mut q: SelectStatement) -> SelectStatement {
-    q.join(
-        JoinType::LeftJoin,
-        MediaCollection,
-        Expr::col((MediaCollection, media_collection::Column::CollectionId))
-            .equals((Collections, collections::Column::Id))
-    )
+    let media_query = Query::select()
+        .column((MediaCollection, media_collection::Column::CollectionId))
+        .column((MediaCollection, media_collection::Column::MediaId))
+        .column((MediaCollection, media_collection::Column::Ord))
+        .from(MediaCollection)
+        .order_by(media_collection::Column::Ord,  Order::Asc)
+        .take();
+    q.join_subquery(JoinType::LeftJoin, media_query, Alias::new("media_collection"), Expr::cust("media_collection.collection_id = collections.id"))
+    // q.join(
+    //     JoinType::LeftJoin,
+    //     MediaCollection,
+    //     Expr::col((MediaCollection, media_collection::Column::CollectionId))
+    //         .equals((Collections, collections::Column::Id))
+    // )
         .join(
             JoinType::LeftJoin,
             Media,
@@ -378,7 +386,7 @@ pub fn collection_with_media(mut q: SelectStatement) -> SelectStatement {
                 .equals((MediaCollection, media_collection::Column::MediaId))
         )
         .expr_as(
-            Expr::cust("COALESCE(json_agg(media.id ORDER BY media_collection.ord) FILTER (WHERE media_collection.collection_id = collections.id), '[]')"),
+            Expr::cust("COALESCE(json_agg(DISTINCT media.id) FILTER (WHERE media_collection.collection_id = collections.id), '[]')"),
             Alias::new("media"))
         .take()
 }
