@@ -3,21 +3,18 @@ use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
 use entity::{creators, creators::Entity as Creators};
 
 use entity::{media_creators, media_creators::Entity as MediaCreators};
+use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+
 use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, EntityTrait, JoinType, QuerySelect, RelationTrait, Set,
 };
 use sea_orm::{QueryFilter, SelectColumns};
 
-
-/// Check if the creators provided exist in the creator_alias table
-/// creator_alias.alias is stored as all lower case to make comparisons easier
-/// When creating the creators table entry, maintain case, as it isn't used for searching
-pub async fn creators_insert(
+async fn creators_new(
     creators_in: Vec<String>,
-    id: i64,
     db: &DatabaseTransaction,
-) -> Result<(), AppError> {
+) -> Result<Vec<i64>, AppError> {
     let mut creators_in = creators_in.clone();
     creators_in.sort_by_key(|c| c.to_lowercase());
     creators_in.dedup_by_key(|c| c.to_lowercase());
@@ -42,7 +39,7 @@ pub async fn creators_insert(
         println!("{}", &creators_in[0]);
 
         let (existing_id, existing_name): (Vec<_>, Vec<_>) = existing.into_iter().unzip();
-        
+
         //Create the models to be inserted that don't exist.
         // Filtering using the results from the first step
         let creators_to_insert: Vec<creators::ActiveModel> = creators_in
@@ -71,9 +68,26 @@ pub async fn creators_insert(
 
         //Merge the newly created creators, and the existing creator ids
         creators_inserted.extend(existing_id);
-        
+
         creators_inserted.sort();
         creators_inserted.dedup();
+        Ok(creators_inserted)
+    }
+    else {
+        Ok(vec![])
+    }
+}
+
+/// Check if the creators provided exist in the creator_alias table
+/// creator_alias.alias is stored as all lower case to make comparisons easier
+/// When creating the creators table entry, maintain case, as it isn't used for searching
+pub async fn media_creators_create(
+    creators_in: Vec<String>,
+    id: i64,
+    db: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if !creators_in.is_empty() {
+        let creators_inserted = creators_new(creators_in, db).await?;
         
         let existing_relations: Vec<i64> = MediaCreators::find()
             .filter(media_creators::Column::MediaId.eq(id))
@@ -105,7 +119,48 @@ pub async fn creators_insert(
     }
 }
 
-pub async fn creator_delete(
+/// Check if the creators provided exist in the creator_alias table
+/// creator_alias.alias is stored as all lower case to make comparisons easier
+/// When creating the creators table entry, maintain case, as it isn't used for searching
+pub async fn collection_creators_create(
+    creators_in: Vec<String>,
+    id: i64,
+    db: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    if !creators_in.is_empty() {
+        let creators_inserted = creators_new(creators_in, db).await?;
+
+        let existing_relations: Vec<i64> = CollectionCreators::find()
+            .filter(collection_creators::Column::CollectionId.eq(id))
+            .filter(collection_creators::Column::CreatorId.is_in(creators_inserted.clone()))
+            .select_only()
+            .column(collection_creators::Column::CreatorId)
+            .into_tuple()
+            .all(db).await?;
+
+        //Create the new relations
+        let creators_relations: Vec<collection_creators::ActiveModel> = creators_inserted
+            .into_iter()
+            .filter(|c| !existing_relations.contains(c))
+            .map(|c| collection_creators::ActiveModel {
+                collection_id: Set(id),
+                creator_id: Set(c),
+            })
+            .collect();
+
+        dbg!(&creators_relations);
+        //Insert the relations
+        if creators_relations.len() > 0 {
+            CollectionCreators::insert_many(creators_relations)
+                .exec_with_returning_many(db).await?;
+        }
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+pub async fn media_creators_delete(
     creators_in: Vec<String>,
     id: i64,
     db: &DatabaseTransaction,
@@ -130,6 +185,36 @@ pub async fn creator_delete(
     MediaCreators::delete_many()
         .filter(media_creators::Column::CreatorId.is_in(out))
         .filter(media_creators::Column::MediaId.eq(id))
+        .exec(db)
+        .await?;
+    Ok(())
+}
+
+pub async fn collection_creators_delete(
+    creators_in: Vec<String>,
+    id: i64,
+    db: &DatabaseTransaction,
+) -> Result<(), AppError> {
+    let out: Vec<i64> = CollectionCreators::find()
+        .join(JoinType::LeftJoin, collection_creators::Relation::Creators.def())
+        .join(JoinType::LeftJoin, creators::Relation::CreatorAlias.def())
+        .filter(
+            creator_alias::Column::Alias.is_not_in(
+                creators_in
+                    .into_iter()
+                    .map(|s| s.to_lowercase())
+                    .collect::<Vec<String>>(),
+            ),
+        )
+        .filter(collection_creators::Column::CollectionId.eq(id))
+        .select_only()
+        .select_column(creator_alias::Column::Creator)
+        .into_tuple()
+        .all(db)
+        .await?;
+    CollectionCreators::delete_many()
+        .filter(collection_creators::Column::CreatorId.is_in(out))
+        .filter(collection_creators::Column::CollectionId.eq(id))
         .exec(db)
         .await?;
     Ok(())

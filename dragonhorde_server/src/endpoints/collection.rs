@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use utoipa::IntoParams;
 use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
 use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
-
+use crate::endpoints::relations::creator_funcs::{collection_creators_create, collection_creators_delete, media_creators_create, media_creators_delete};
 
 #[serde_with::skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -61,21 +61,7 @@ pub async fn post_collection(
             .await?;
 
         if let Some(creators) = payload.creators {
-            let creators: Vec<String> = creators.0.into_iter().map(|s| s.to_lowercase()).collect();
-            let found_creators = CreatorAlias::find()
-                .filter(creator_alias::Column::Alias.is_in(&creators))
-                .all(&txn).await?;
-            if creators.len() != found_creators.len() {
-                return Err(AppError::BadRequest("Creator not found".to_string()));
-            }
-            for c in found_creators {
-                CollectionCreators::insert(
-                    collection_creators::ActiveModel{
-                        creator_id: Set(c.creator),
-                        collection_id: Set(new_model.last_insert_id)
-                    }
-                ).exec(&txn).await?;
-            }
+            collection_creators_create(creators.0.clone(), new_model.last_insert_id, &txn).await?;
         }
 
         if let Some(media) = payload.media {
@@ -223,6 +209,11 @@ pub async fn patch_collection_id(
                 }
             }
         }
+    }
+
+    if let Some(creators) = payload.creators {
+        collection_creators_create(creators.0.clone(), id, &txn).await?;
+        collection_creators_delete(creators.0, id, &txn).await?;
     }
     
 

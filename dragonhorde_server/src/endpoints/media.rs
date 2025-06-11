@@ -3,7 +3,7 @@ use sea_orm::ColumnTrait;
 
 use crate::api_models::{ApiMedia, DataMap, DataVector, Pagination, SearchResult};
 use crate::endpoints::relations::collection_funcs::{collections_delete, collections_insert};
-use crate::endpoints::relations::creator_funcs::{creator_delete, creators_insert};
+use crate::endpoints::relations::creator_funcs::{media_creators_delete, media_creators_create};
 use crate::endpoints::relations::source_funcs::{sources_delete, sources_insert};
 use crate::error::AppError;
 use crate::error::AppError::{BadRequest, Exists, NotFound};
@@ -82,8 +82,8 @@ async fn media_creators_update(
     db: &DatabaseTransaction,
 ) -> Result<(), AppError> {
     if let Some(creators) = &creators {
-        creators_insert(creators.0.clone(), new_model.id, db).await?;
-        creator_delete(creators.0.clone(), new_model.id, db).await?;
+        media_creators_create(creators.0.clone(), new_model.id, db).await?;
+        media_creators_delete(creators.0.clone(), new_model.id, db).await?;
     }
     Ok(())
 }
