@@ -1,19 +1,16 @@
-use sea_orm::{ColumnTrait};
-mod collection_funcs;
-mod creator_funcs;
-mod source_funcs;
-mod tag_funcs;
+use sea_orm::ColumnTrait;
+
 
 use crate::api_models::{ApiMedia, DataMap, DataVector, Pagination, SearchResult};
-use crate::endpoints::media::collection_funcs::{collections_delete, collections_insert};
-use crate::endpoints::media::creator_funcs::{creator_delete, creators_insert};
-use crate::endpoints::media::source_funcs::{sources_delete, sources_insert};
+use crate::endpoints::relations::collection_funcs::{collections_delete, collections_insert};
+use crate::endpoints::relations::creator_funcs::{creator_delete, creators_insert};
+use crate::endpoints::relations::source_funcs::{sources_delete, sources_insert};
 use crate::error::AppError;
-use crate::error::AppError::{NotFound, Exists, BadRequest};
-use crate::{AppState, queries};
+use crate::error::AppError::{BadRequest, Exists, NotFound};
+use crate::{queries, AppState};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, header};
+use axum::http::{header, HeaderMap};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use dragonhorde_common::hash::{perceptual, sha256};
@@ -29,6 +26,7 @@ use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
 use utoipa::ToSchema;
 use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
+use crate::endpoints::relations::tag_funcs;
 
 /// Check if the media item exists and return it as ApiMedia, raise a AppError:NotFound
 async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
