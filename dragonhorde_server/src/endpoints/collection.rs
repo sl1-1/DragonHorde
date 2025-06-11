@@ -44,61 +44,71 @@ pub async fn post_collection(
     state: State<AppState>,
     Json(payload): Json<ApiCollection>,
 ) -> Result<(StatusCode, Json<ApiCollection>), AppError> {
-    let txn: DatabaseTransaction = state.conn.begin().await?;
-    let new_model = Collections::insert(collections::ActiveModel {
-        name: Set(payload.name.unwrap()),
-        description: Set(payload.description),
-        parent: Set(payload.parent),
-        ..Default::default()
-    })
-    .exec(&txn)
-    .await?;
-    
-    if let Some(creators) = payload.creators {
-        let creators: Vec<String> = creators.0.into_iter().map(|s| s.to_lowercase()).collect();
-        let found_creators = CreatorAlias::find()
-        .filter(creator_alias::Column::Alias.is_in(&creators))
-            .all(&txn).await?;
-        if creators.len() != found_creators.len() {
-            return Err(AppError::BadRequest("Creator not found".to_string()));
-        } 
-        for c in found_creators {
-            CollectionCreators::insert(
-                collection_creators::ActiveModel{
-                    creator_id: Set(c.creator),
-                    collection_id: Set(new_model.last_insert_id)
-                }
-            ).exec(&txn).await?;
-        }
-    }
 
-    if let Some(media) = payload.media {
-        for (i, m) in media.0.iter().enumerate() {
-            MediaCollection::insert(media_collection::ActiveModel {
-                media_id: Set(*m),
-                collection_id: Set(new_model.last_insert_id),
-                ord: Set(Some(i as i32)),
-            })
+    if let Some(name) = payload.name {
+        if Collections::find().filter(collections::Column::Name.eq(&name)).one(&state.conn).await?.is_some() {
+            return Err(AppError::BadRequest(format!("Collection {} Already Exists", name)))
+        }
+
+        let txn: DatabaseTransaction = state.conn.begin().await?;
+        let new_model = Collections::insert(collections::ActiveModel {
+            name: Set(name),
+            description: Set(payload.description),
+            parent: Set(payload.parent),
+            ..Default::default()
+        })
             .exec(&txn)
             .await?;
+
+        if let Some(creators) = payload.creators {
+            let creators: Vec<String> = creators.0.into_iter().map(|s| s.to_lowercase()).collect();
+            let found_creators = CreatorAlias::find()
+                .filter(creator_alias::Column::Alias.is_in(&creators))
+                .all(&txn).await?;
+            if creators.len() != found_creators.len() {
+                return Err(AppError::BadRequest("Creator not found".to_string()));
+            }
+            for c in found_creators {
+                CollectionCreators::insert(
+                    collection_creators::ActiveModel{
+                        creator_id: Set(c.creator),
+                        collection_id: Set(new_model.last_insert_id)
+                    }
+                ).exec(&txn).await?;
+            }
         }
+
+        if let Some(media) = payload.media {
+            for (i, m) in media.0.iter().enumerate() {
+                MediaCollection::insert(media_collection::ActiveModel {
+                    media_id: Set(*m),
+                    collection_id: Set(new_model.last_insert_id),
+                    ord: Set(Some(i as i32)),
+                })
+                    .exec(&txn)
+                    .await?;
+            }
+        }
+
+        txn.commit().await?;
+
+        let mut q = queries::base_collection();
+        q = queries::collection(q, new_model.last_insert_id);
+        q = queries::collection_with_media(q);
+        let statement = state
+            .conn
+            .get_database_backend()
+            .build(&q);
+        let found_collection = ApiCollection::find_by_statement(statement)
+            .one(&state.conn)
+            .await?
+            .unwrap();
+
+        Ok((StatusCode::OK, Json(found_collection)))
+    } else {
+        Err(AppError::BadRequest("name required".to_string()))
     }
 
-    txn.commit().await?;
-
-    let mut q = queries::base_collection();
-    q = queries::collection(q, new_model.last_insert_id);
-    q = queries::collection_with_media(q);
-    let statement = state
-        .conn
-        .get_database_backend()
-        .build(&q);
-    let found_collection = ApiCollection::find_by_statement(statement)
-        .one(&state.conn)
-        .await?
-        .unwrap();
-
-    Ok((StatusCode::OK, Json(found_collection)))
 }
 
 #[utoipa::path(get, path = "/v1/collection/{id}", responses((status = OK, body = ApiCollection)), tags = ["collection"])]
@@ -214,6 +224,7 @@ pub async fn patch_collection_id(
             }
         }
     }
+    
 
     txn.commit().await?;
 
