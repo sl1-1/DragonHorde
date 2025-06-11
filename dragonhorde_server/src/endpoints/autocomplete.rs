@@ -4,7 +4,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use axum_extra::extract::Query;
-use entity::{creators, creators::Entity as Creators};
+use entity::{creators, creators::Entity as Creators, media_collection};
+use entity::{collections, collections::Entity as Collections};
 use entity::media_creators;
 use entity::media_tags;
 use entity::{tags, tags::Entity as Tags};
@@ -47,6 +48,7 @@ pub struct TagQuery {
 
 #[derive(utoipa::ToSchema, Debug, Deserialize, Serialize)]
 pub struct TagReturn {
+    id: i64,
     tag: String,
     #[schema(inline, example=TagType::Tag)]
     tag_type: TagType
@@ -78,11 +80,23 @@ pub async fn autocomplete(
             .group_by(creators::Column::Name)
             .into_tuple()
             .all(&state.conn).await?;
-        combined.extend(creators.into_iter().map(|(creator, count)| (TagReturn{tag: creator, tag_type: TagType::Artist}, count)));
+        combined.extend(creators.into_iter().map(|(creator, count)| (TagReturn{id: 0, tag: creator, tag_type: TagType::Artist}, count)));
     }
 
     if query.tag_type == TagType::All || query.tag_type == TagType::Collection {
-
+        let collections: Vec<(i64, String, i64)> = Collections::find()
+            .select_only()
+            .column(collections::Column::Id)
+            .column(collections::Column::Name)
+            .column_as(media_collection::Column::MediaId.count(), "count")
+            .filter(collections::Column::Name.starts_with(tag))
+            .join(JoinType::LeftJoin, collections::Relation::MediaCollection.def())
+            .order_by(media_collection::Column::MediaId.count(), Order::Desc)
+            .group_by(collections::Column::Id)
+            .group_by(collections::Column::Name)
+            .into_tuple()
+            .all(&state.conn).await?;
+        combined.extend(collections.into_iter().map(|(id, collection, count)| (TagReturn{id, tag: collection, tag_type: TagType::Collection}, count)));
     }
 
     if query.tag_type == TagType::All || query.tag_type == TagType::Tag {
@@ -102,7 +116,7 @@ pub async fn autocomplete(
             .group_by(tags::Column::Tag)
             .into_tuple()
             .all(&state.conn).await?;
-        combined.extend(tags.into_iter().map(|(t, count)| (TagReturn{tag: if neg {format!("-{}", t)} else {t}, tag_type:TagType::Tag}, count)));
+        combined.extend(tags.into_iter().map(|(t, count)| (TagReturn{id:0, tag: if neg {format!("-{}", t)} else {t}, tag_type:TagType::Tag}, count)));
     }
 
 
