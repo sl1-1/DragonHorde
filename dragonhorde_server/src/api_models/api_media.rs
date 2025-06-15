@@ -60,12 +60,31 @@ pub struct ApiMedia {
     ///Distance when searching by perceptual hash
     #[schema(read_only)]
     pub distance: Option<f64>,
+    #[schema(read_only)]
+    pub metadata: Option<serde_json::Value>,
+    pub file_type: Option<String>,
 }
 
-#[skip_serializing_none]
-#[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub result: Vec<ApiMedia>,
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+)]
+pub struct ImageResolution{
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+#[derive(
+    Clone,
+    Debug,
+    Serialize,
+    Deserialize,
+)]
+pub struct ImageMetadata {
+    pub(crate) resolution: ImageResolution,
+    pub(crate) bits_per_pixel: u16,
+    pub(crate) transparent: bool
 }
 
 fn deserialize_perceptual_hash<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>

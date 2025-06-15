@@ -107,6 +107,9 @@ pub fn base_media() -> SelectStatement {
         .column((Media, media::Column::Created))
         .column(media::Column::Title)
         .column((Media, media::Column::Description))
+        .column((Media, media::Column::Metadata))
+        .column((Media, media::Column::Type))
+        .expr_as(Expr::col((Media, media::Column::Type)), Alias::new("file_type"))
         .from(Media)
         // .join(
         //     JoinType::LeftJoin,

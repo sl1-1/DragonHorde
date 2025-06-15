@@ -18,6 +18,8 @@ pub struct Model {
     pub r#type: Option<String>,
     #[sea_orm(select_as = "bigint", save_as = "bit(64)")]
     pub perceptual_hash: i64,
+    #[sea_orm(column_type = "JsonBinary", nullable)]
+    pub metadata: Option<Json>
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

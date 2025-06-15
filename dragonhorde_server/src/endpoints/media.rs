@@ -1,7 +1,7 @@
 use sea_orm::ColumnTrait;
 
 
-use crate::api_models::{ApiMedia, DataMap, DataVector, Pagination, SearchResult};
+use crate::api_models::{ApiMedia, DataMap, DataVector, ImageMetadata, ImageResolution, Pagination, SearchResult};
 use crate::endpoints::relations::collection_funcs::{collections_delete, collections_insert};
 use crate::endpoints::relations::creator_funcs::{media_creators_delete, media_creators_create};
 use crate::endpoints::relations::source_funcs::{sources_delete, sources_insert};
@@ -124,6 +124,16 @@ pub async fn post_media(
         payload.perceptual_hash = Some(perceptual(&im))
     }
 
+    let meta = ImageMetadata{
+        resolution: ImageResolution{
+            width: im.width(),
+            height: im.height(),
+        },
+        bits_per_pixel: im.color().bits_per_pixel(),
+        transparent: im.color().has_alpha(),
+
+    };
+
     let hash = sha256(&file.contents);
 
     if let Some(_) = Media::find()
@@ -148,6 +158,7 @@ pub async fn post_media(
         title: Set(payload.title),
         r#type: Set(Some(image_format.extensions_str()[0].to_string())),
         description: Set(payload.description),
+        metadata: Set(Some(serde_json::to_value(meta)?)),
         ..Default::default()
     };
 
