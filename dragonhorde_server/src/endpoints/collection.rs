@@ -13,10 +13,8 @@ use std::collections::HashSet;
 use axum::response::Redirect;
 use sea_query::Order;
 use utoipa::IntoParams;
-use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
-use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
 use crate::endpoints::media::Binary;
-use crate::endpoints::relations::creator_funcs::{collection_creators_create, collection_creators_delete, media_creators_create, media_creators_delete};
+use crate::endpoints::relations::creator_funcs::{collection_creators_create, collection_creators_delete};
 
 #[serde_with::skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -218,7 +216,7 @@ pub async fn patch_collection_id(
         collection_creators_create(creators.0.clone(), id, &txn).await?;
         collection_creators_delete(creators.0, id, &txn).await?;
     }
-    
+
 
     txn.commit().await?;
 
