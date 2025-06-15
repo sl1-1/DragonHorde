@@ -1,4 +1,4 @@
-use sea_orm::QueryFilter;
+use sea_orm::{QueryFilter, QueryOrder};
 use crate::api_models::ApiCollection;
 use crate::error::AppError;
 use crate::{queries, AppState};
@@ -10,9 +10,12 @@ use entity::{media_collection, media_collection::Entity as MediaCollection};
 use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, FromQueryResult, IntoActiveModel, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use axum::response::Redirect;
+use sea_query::Order;
 use utoipa::IntoParams;
 use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
 use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
+use crate::endpoints::media::Binary;
 use crate::endpoints::relations::creator_funcs::{collection_creators_create, collection_creators_delete, media_creators_create, media_creators_delete};
 
 #[serde_with::skip_serializing_none]
@@ -272,3 +275,15 @@ pub async fn collection_id_add(
 // pub async fn post_collection() {
 //
 // }
+
+#[utoipa::path(get, path = "/v1/collection/{id}/thumbnail", responses((status = OK, body = Binary, content_type = "application/octet")), tags = ["collection"])]
+pub async fn get_collection_id_thumbnail(
+    state: State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Redirect, AppError> {
+    match MediaCollection::find().filter(media_collection::Column::CollectionId.eq(id)).order_by(media_collection::Column::Ord, Order::Asc).one(&state.conn).await? {
+        None => {Err(AppError::NotFound(format!("Collection {} not found", id)))}
+        Some(media) => {    Ok(Redirect::permanent(&format!("/v1/media/{}/thumbnail", media.media_id)))
+        }
+    }
+}
