@@ -54,7 +54,7 @@ pub async fn get_media(
     q = queries::pagination(q, pagination.0);
     let statement = state.conn.get_database_backend().build(&q);
     let found_media = ApiMedia::find_by_statement(statement).all(&state.conn).await?;
-    Ok(Json(SearchResult {result: found_media}))
+    Ok(Json(SearchResult {result: found_media, ..Default::default() }))
 }
 
 async fn media_tag_update(
