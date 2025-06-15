@@ -72,9 +72,6 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::collection::get_collection_id_thumbnail))
         .routes(routes!(endpoints::creators::get_creators))
         .routes(routes!(endpoints::creators::get_creators_id))
-        .routes(routes!(endpoints::creators::get_creators_collection))
-        .routes(routes!(endpoints::creators::get_creators_uncollected))
-        .routes(routes!(endpoints::creators::get_creators_media))
         .routes(routes!(endpoints::creators::get_creators_by_alias))
         .routes(routes!(endpoints::creators::patch_creators_id))
 
