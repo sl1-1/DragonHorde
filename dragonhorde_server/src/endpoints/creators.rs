@@ -1,13 +1,9 @@
 use sea_orm::QueryFilter;
 use std::collections::HashSet;
 pub(crate) use crate::api_models::api_creator::{ApiCreator, CreatorsResults};
-use crate::api_models::api_media::ApiMedia;
-use crate::api_models::{ApiCollection, CollectionResult, Pagination, SearchResult};
 use crate::error::AppError;
-use crate::queries::{base_media, collections_by_creator, media_by_creator, media_from_search, media_uncollected};
 use crate::{queries, AppState};
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::extract::{Path, State};
 use axum::Json;
 use entity::{creators, creators::Entity as Creators};
 use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, Set, TransactionTrait};

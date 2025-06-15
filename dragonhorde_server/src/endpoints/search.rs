@@ -4,7 +4,7 @@ use crate::api_models::{
 };
 use crate::error::AppError;
 use crate::queries::{
-    base_media, distance, media_from_search, pagination, search_collection_creator,
+    base_media, distance, media_from_search, search_collection_creator,
     search_collection_no_creator, search_collections, search_creator, search_hash,
     search_no_collections, search_no_creator,
 };

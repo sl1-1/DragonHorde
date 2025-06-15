@@ -3,7 +3,7 @@ use chrono::{DateTime, FixedOffset};
 use sea_orm::{
     FromJsonQueryResult, FromQueryResult
 };
-use serde::{de, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 pub(crate) use crate::api_models::{DataMap, DataVector};
