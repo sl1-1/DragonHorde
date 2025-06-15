@@ -50,7 +50,7 @@ pub async fn get_creators_by_alias(
     Path(alias): Path<String>,
 ) -> Result<Json<ApiCreator>, AppError> {
     let mut q = queries::base_creator();
-    q = queries::creator_by_alias(q, &alias);
+    q = queries::creator_by_alias(q, &alias.to_lowercase());
     let statement = state.conn.get_database_backend().build(&q);
     match ApiCreator::find_by_statement(statement).one(&state.conn).await? {
         None => Err(NotFound(format!("Creator {} not found", alias))),
