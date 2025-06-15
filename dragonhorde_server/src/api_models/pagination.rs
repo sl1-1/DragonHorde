@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-#[derive(IntoParams, Deserialize)]
+#[derive(Clone, Debug, IntoParams, Deserialize)]
 pub struct Pagination {
     /// Number of Results per page
     pub(crate) per_page: Option<u64>,
