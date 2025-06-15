@@ -86,34 +86,3 @@ pub struct ImageMetadata {
     pub(crate) bits_per_pixel: u16,
     pub(crate) transparent: bool
 }
-
-fn deserialize_perceptual_hash<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
-where
-    D: de::Deserializer<'de>,
-{
-    let value = Vec::deserialize(deserializer)?;
-    Ok(Some(value))
-    // // define a visitor that deserializes
-    // // `ActualData` encoded as json within a string
-    // struct JsonStringVisitor;
-    //
-    // impl<'de> de::Visitor<'de> for JsonStringVisitor {
-    //     type Value = ActualData;
-    //
-    //     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-    //         formatter.write_str("a string containing json data")
-    //     }
-    //
-    //     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    //     where
-    //         E: de::Error,
-    //     {
-    //         // unfortunately we lose some typed information
-    //         // from errors deserializing the json string
-    //         serde_json::from_str(v).map_err(E::custom)
-    //     }
-    // }
-    //
-    // // use our visitor to deserialize an `ActualValue`
-    // deserializer.deserialize_any(JsonStringVisitor)
-}

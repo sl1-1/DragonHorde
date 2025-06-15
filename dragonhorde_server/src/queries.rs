@@ -295,30 +295,6 @@ pub fn search_no_collections(mut q: SelectStatement) -> SelectStatement {
         .take()
 }
 
-pub fn media_by_creator(mut q: SelectStatement, creator: i64) -> SelectStatement {
-    q.join(
-        JoinType::LeftJoin,
-        MediaCreators,
-        Expr::col((MediaCreators, media_creators::Column::MediaId))
-            .equals((Media, media::Column::Id)),
-    )
-    .join(
-        JoinType::LeftJoin,
-        Creators,
-        Expr::col((Creators, creators::Column::Id))
-            .equals((MediaCreators, media_creators::Column::CreatorId)),
-    )
-    .and_having(Expr::col((Creators, creators::Column::Id)).eq(creator))
-    .group_by_col((Creators, creators::Column::Id))
-    .take()
-}
-
-pub fn media_uncollected(mut q: SelectStatement) -> SelectStatement {
-    q.and_having(Expr::col((MediaCollection, media_collection::Column::CollectionId)).is_null())
-        .group_by_col((MediaCollection, media_collection::Column::CollectionId))
-        .take()
-}
-
 pub fn media_by_sha(mut q: SelectStatement, sha: &String) -> SelectStatement {
     q.and_having(Expr::col((Media, media::Column::Sha256)).eq(sha))
         .take()
@@ -523,13 +499,6 @@ pub fn collection_id_by_path(path: String) -> Statement {
     FROM cte
     WHERE path = $1::varchar[]
     "#, [path_split.into()])
-}
-
-pub fn collections_by_creator(mut q: SelectStatement, creator_id: i64) -> SelectStatement {
-    q.and_having(Expr::col((Creators, creators::Column::Id)).eq(creator_id))
-    .and_having(Expr::col((Collections, collections::Column::Parent)).is_null())
-        .group_by_col((Creators, creators::Column::Id))
-        .take()
 }
 
 pub fn base_creator() -> SelectStatement {
