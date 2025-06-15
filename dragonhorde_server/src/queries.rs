@@ -1,3 +1,4 @@
+use sea_orm::{DatabaseBackend, Statement};
 use entity::{collection_creators, collection_creators::Entity as CollectionCreators};
 use entity::{collection_tags, collection_tags::Entity as CollectionTags};
 use entity::{collections, collections::Entity as Collections};
@@ -260,6 +261,38 @@ pub fn search_creator(mut q: SelectStatement, creators: Vec<String>) -> SelectSt
     )
     .group_by_col((Creators, creators::Column::Name))
     .take()
+}
+
+pub fn search_no_creator(mut q: SelectStatement) -> SelectStatement {
+    q.join(
+        JoinType::LeftJoin,
+        MediaCreators,
+        Expr::col((MediaCreators, media_creators::Column::MediaId))
+            .equals((Media, media::Column::Id)),
+    )
+        .and_having(
+            Expr::col((MediaCreators, media_creators::Column::CreatorId)).is_null()
+        )
+        .group_by_col((MediaCreators, media_creators::Column::CreatorId))
+        .take()
+}
+
+pub fn search_collections(mut q: SelectStatement, search_collections: Vec<String>) -> SelectStatement {
+    q.and_having(
+           Expr::col((Collections, collections::Column::Name)).is_in(
+               search_collections,
+            ),
+        )
+        .group_by_col((Creators, creators::Column::Name))
+        .take()
+}
+
+pub fn search_no_collections(mut q: SelectStatement) -> SelectStatement {
+        q.and_having(
+            Expr::col((MediaCollection, media_collection::Column::CollectionId)).is_null()
+        )
+        .group_by_col((MediaCollection, media_collection::Column::CollectionId))
+        .take()
 }
 
 pub fn media_by_creator(mut q: SelectStatement, creator: i64) -> SelectStatement {
@@ -547,5 +580,26 @@ pub fn distance(mut q: SelectStatement, hash: i64) -> SelectStatement {
     q.expr_as(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash), a.clone())
         .clear_order_by()
         .order_by_expr(Expr::cust_with_expr("perceptual_hash <~> $1::bit(64)", hash), Order::Asc)
+        .take()
+}
+
+pub fn search_collection_creator(mut q: SelectStatement, creators: Vec<String>) -> SelectStatement {
+    q.and_having(
+            Func::lower(Expr::col((Creators, creators::Column::Name))).is_in(
+                creators
+                    .into_iter()
+                    .map(|s| s.to_lowercase())
+                    .collect::<Vec<String>>(),
+            ),
+        )
+        .group_by_col((Creators, creators::Column::Name))
+        .take()
+}
+
+pub fn search_collection_no_creator(mut q: SelectStatement) -> SelectStatement {
+    q.and_having(
+            Expr::col((CollectionCreators, collection_creators::Column::CreatorId)).is_null()
+        )
+        .group_by_col((CollectionCreators, collection_creators::Column::CreatorId))
         .take()
 }

@@ -56,6 +56,8 @@ async fn main() -> anyhow::Result<()> {
         .routes(routes!(endpoints::media::get_media_thumbnail))
         .routes(routes!(endpoints::media::get_media_item_by_hash))
         .routes(routes!(endpoints::search::search_query))
+        .routes(routes!(endpoints::search::search_query_json))
+
         .routes(routes!(endpoints::search::hash_search))
 
         .routes(routes!(endpoints::tags::search_tags))
