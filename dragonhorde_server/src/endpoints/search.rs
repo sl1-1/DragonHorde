@@ -53,6 +53,7 @@ pub async fn search_query(
         StatusCode::OK,
         Json(SearchResult {
             result: found_media,
+            ..Default::default()
         }),
     ))
 }
@@ -76,9 +77,8 @@ pub async fn hash_search(
     let found_media = ApiMedia::find_by_statement(statement)
         .all(&state.conn)
         .await?;
-    Ok(
-        Json(SearchResult {
-            result: found_media,
-        }),
-    )
+    Ok(Json(SearchResult {
+        result: found_media,
+        ..Default::default()
+    }))
 }
