@@ -274,6 +274,27 @@ pub async fn get_media_item(
     Ok(Json(load_media_item(id, &state.conn).await?))
 }
 
+#[utoipa::path(delete, path = "/v1/media/{id}", responses((status = OK)), tags = ["media"]
+)]
+pub async fn delete_media_item(
+    state: State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<(), AppError> {
+    let item = load_media_item(id, &state.conn).await?;
+    Media::delete_by_id(item.id.unwrap()).exec(&state.conn).await?;
+    let path = &state.storage_dir.join(item.storage_uri.unwrap().clone());
+    if path.exists() {
+        std::fs::remove_file(path).ok();
+    }
+    let thumbnail_path = state
+        .thumbnail_dir
+        .join(format!("{}.webp", &item.sha256.unwrap()));
+    if thumbnail_path.exists() {
+        std::fs::remove_file(thumbnail_path).ok();
+    }
+    Ok(())
+}
+
 #[utoipa::path(get, path = "/v1/media/by_hash/{hash}", responses((status = OK, body = ApiMedia)), tags = ["media"])]
 pub async fn get_media_item_by_hash(
     state: State<AppState>,
