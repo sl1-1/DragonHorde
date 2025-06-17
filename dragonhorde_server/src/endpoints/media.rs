@@ -1,7 +1,9 @@
 use sea_orm::ColumnTrait;
+use sqlx::types::chrono::FixedOffset;
+use std::collections::HashMap;
 
 
-use crate::api_models::{ApiMedia, DataMap, DataVector, ImageMetadata, ImageResolution, Pagination, SearchResult};
+use crate::api_models::{ApiMedia, ApiMediaReturn, DataMap, DataVector, ImageMetadata, ImageResolution, Pagination, SearchResult};
 use crate::endpoints::relations::collection_funcs::{collections_delete, collections_insert};
 use crate::endpoints::relations::creator_funcs::{media_creators_delete, media_creators_create};
 use crate::endpoints::relations::source_funcs::{sources_delete, sources_insert};
@@ -21,6 +23,7 @@ use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
     FromQueryResult, QueryFilter, Set, TransactionTrait,
 };
+use sqlx::Error;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use tokio::io::AsyncReadExt;
@@ -29,12 +32,45 @@ use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
 use crate::endpoints::relations::tag_funcs;
 
 /// Check if the media item exists and return it as ApiMedia, raise a AppError:NotFound
-async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMedia, AppError> {
-    let q = db.get_database_backend().build(&queries::media_item(id));
-    match ApiMedia::find_by_statement(q).one(db).await? {
-        None => Err(NotFound(format!("media with id {} not found", id))),
-        Some(m) => Ok(m),
-    }
+async fn load_media_item(id: i64, db: &DatabaseConnection) -> Result<ApiMediaReturn, AppError> {
+    let r = sqlx::query_as!(ApiMediaReturn, r#"
+        SELECT "media"."id",
+               "storage_uri",
+               "sha256",
+               CAST("perceptual_hash" AS bigint),
+               "uploaded" as "uploaded: chrono::DateTime<FixedOffset>",
+               "media"."created" "created: chrono::DateTime<FixedOffset>",
+               "title",
+               "media"."description",
+               "media"."metadata",
+               "media"."type"                                                                                          AS "file_type",
+               ARRAY_AGG(DISTINCT creators.name) FILTER (WHERE media_creators.media_id = media.id)                     AS "creators",
+               ARRAY_AGG(DISTINCT collections.name) FILTER (WHERE media_collection.media_id = media.id)                AS "collections",
+               json_object_agg(DISTINCT collections.id, collections.name)
+                        FILTER (WHERE media_collection.media_id = media.id)                                            AS "collections_with_id: sqlx::types::Json<HashMap<String, String>>",
+               ARRAY_AGG(DISTINCT sources.source) FILTER (WHERE sources.media_id = media.id)                           AS "sources",
+               JSON_OBJECT_AGG(t.name, ts) FILTER (WHERE t.media_id = media.id)                                        AS "tag_groups: sqlx::types::Json<HashMap<String, Vec<String>>>"
+        FROM "media"
+                 LEFT JOIN "media_creators" ON "media_creators"."media_id" = "media"."id"
+                 LEFT JOIN "creators" ON "creators"."id" = "media_creators"."creator_id"
+                 LEFT JOIN "media_collection" ON "media_collection"."media_id" = "media"."id"
+                 LEFT JOIN "collections" ON "collections"."id" = "media_collection"."collection_id"
+                 LEFT JOIN "sources" ON "sources"."media_id" = "media"."id"
+                 LEFT JOIN (SELECT "media_tags"."media_id", "tag_groups"."name", JSON_AGG("tags"."tag") AS "ts"
+                            FROM "tag_groups"
+                                     LEFT JOIN "tags" ON "tags"."group" = "tag_groups"."id"
+                                     LEFT JOIN "media_tags" ON "tags"."id" = "media_tags"."tag_id"
+                            GROUP BY "name", "media_tags"."media_id") AS "t" ON t.media_id = media.id
+        WHERE "media"."id" = $1
+        GROUP BY "media"."id", "media"."uploaded"
+        ORDER BY "media"."uploaded"
+        "#, id)
+        .fetch_one(db.get_postgres_connection_pool())
+        .await.map_err(|e| { match e {
+        Error::RowNotFound => {AppError::NotFound(format!("media with id {} not found", id))}
+        _ => {AppError::Internal(e.into())}
+    }})?;
+    Ok(r)
 }
 
 /// Check if the media item exists and return it as media::Model, raise a AppError:NotFound 
@@ -113,7 +149,7 @@ pub struct UploadForm {
 pub async fn post_media(
     state: State<AppState>,
     TypedMultipart(UploadForm { data, file }): TypedMultipart<UploadForm>,
-) -> Result<Json<Option<ApiMedia>>, AppError> {
+) -> Result<Json<Option<ApiMediaReturn>>, AppError> {
     let mut payload: ApiMedia = serde_json::from_str(data.as_str())?;
 
     let reader = ImageReader::new(Cursor::new(&file.contents)).with_guessed_format()?;
@@ -199,7 +235,7 @@ pub async fn update_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
     Json(payload): Json<ApiMedia>,
-) -> Result<Json<ApiMedia>, AppError> {
+) -> Result<Json<ApiMediaReturn>, AppError> {
     let current = load_media_item_model(id, &state.conn).await?;
     //Database Transaction
     let txn: DatabaseTransaction = state.conn.begin().await?;
@@ -270,7 +306,7 @@ pub async fn media_item_patch(
 pub async fn get_media_item(
     state: State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiMedia>, AppError> {
+) -> Result<Json<ApiMediaReturn>, AppError> {
     Ok(Json(load_media_item(id, &state.conn).await?))
 }
 
@@ -288,7 +324,7 @@ pub async fn delete_media_item(
     }
     let thumbnail_path = state
         .thumbnail_dir
-        .join(format!("{}.webp", &item.sha256.unwrap()));
+        .join(format!("{}.webp", &item.sha256));
     if thumbnail_path.exists() {
         std::fs::remove_file(thumbnail_path).ok();
     }

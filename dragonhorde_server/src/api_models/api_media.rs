@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use chrono::{DateTime, FixedOffset};
 
 use sea_orm::{
@@ -60,6 +61,60 @@ pub struct ApiMedia {
     ///Distance when searching by perceptual hash
     #[schema(read_only)]
     pub distance: Option<f64>,
+    #[schema(read_only)]
+    pub metadata: Option<serde_json::Value>,
+    pub file_type: Option<String>,
+}
+
+#[skip_serializing_none]
+#[derive(
+    utoipa::ToSchema,
+    Clone,
+    Debug,
+    PartialEq,
+    Serialize,
+    Deserialize,
+)]
+#[schema(title="MediaItem")]
+pub struct ApiMediaReturn {
+    #[schema(read_only, value_type = i64)]
+    pub id: Option<i64>,
+    #[schema(read_only, value_type = String)]
+    pub storage_uri: Option<String>,
+    #[schema(read_only, value_type = String)]
+    pub sha256: String,
+    #[schema(read_only, value_type = i64)]
+    // #[serde(deserialize_with = "deserialize_perceptual_hash")]
+    pub perceptual_hash: Option<i64>,
+    /// date-time that this item was uploaded
+    #[schema(read_only, value_type = DateTime<FixedOffset>)]
+    pub uploaded: DateTime<FixedOffset>,
+    /// date-time that this item was created, if known
+    pub created: Option<DateTime<FixedOffset>>,
+    pub title: Option<String>,
+    #[schema(value_type = Option<Vec<String>>)]
+    #[serde(default)]
+    pub creators: Option<Vec<String>>,
+    /// Known source locations for this item
+    #[schema(value_type = Option<Vec<String>>)]
+    #[serde(default)]
+    pub sources: Option<Vec<String>>,
+    /// Collections this item is in
+    #[schema(value_type = Option<Vec<String>>)]
+    #[serde(default)]
+    pub collections: Option<Vec<String>>,
+    /// Collections this item is in
+    #[schema(value_type = Option<HashMap<i64, String>>)]
+    #[serde(default)]
+    pub collections_with_id: Option<sqlx::types::Json<HashMap<String, String>>>,
+    #[serde(default)]
+    #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
+    pub tag_groups: Option<sqlx::types::Json<HashMap<String, Vec<String>>>>,
+    /// Description of this item, if available
+    pub description: Option<String>,
+    ///Distance when searching by perceptual hash
+    // #[schema(read_only)]
+    // pub distance: Option<f64>,
     #[schema(read_only)]
     pub metadata: Option<serde_json::Value>,
     pub file_type: Option<String>,
