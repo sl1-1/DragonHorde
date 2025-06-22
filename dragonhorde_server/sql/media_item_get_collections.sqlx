@@ -1,0 +1,4 @@
+SELECT "collections"."name"
+FROM "media_collection"
+         LEFT JOIN "collections" ON "collections"."id" = "media_collection"."collection_id"
+WHERE "media_collection"."media_id" = $1

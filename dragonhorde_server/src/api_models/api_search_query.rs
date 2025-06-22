@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::IntoParams;
 use serde_with::skip_serializing_none;
-use crate::api_models::{ApiCollection, ApiMedia};
+use crate::api_models::{ApiCollectionResult, ApiMediaReturn};
 
 #[derive(Debug, IntoParams, Deserialize)]
 pub struct SearchQuery {
@@ -50,8 +50,8 @@ pub struct HashQuery {
 #[skip_serializing_none]
 #[derive(utoipa::ToSchema, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchResult {
-    pub result: Vec<ApiMedia>,
-    pub collections: Option<Vec<ApiCollection>>,
+    pub result: Vec<ApiMediaReturn>,
+    pub collections: Option<Vec<ApiCollectionResult>>,
 }
 
 impl Default for SearchResult {

@@ -4,24 +4,26 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-entity = { path = "entity" }
-axum = { version = "0.8.3", features = ["multipart", "macros"] }
-sea-orm = { version = "1.1.10", features = [ 'sqlx-postgres', 'runtime-tokio-rustls', "macros", "with-json", "postgres-array", "postgres-vector" ]}
-tokio = { version = "1.44.2", features = ["full"] }
-tracing-subscriber = "0.3.19"
+axum = { version = "0.8.4", features = ["multipart", "macros"] }
+tokio = { version = "1.45.1", features = ["full"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 anyhow = "1.0.98"
 dotenvy = "0.15.7"
-tower-http = { version = "0.6.2", features = ["trace", "fs"] }
+tower-http = { version = "0.6.6", features = ["trace", "fs"] }
 tracing = "0.1.41"
-serde = "1.0.219"
-serde_json = "1.0.140"
-serde_with = "3.12.0"
+serde = { version = "1.0.219" }
+serde_json = { version = "1.0.140" }
+serde_with = "3.13.0"
 image = { version = "0.25.6", features = ["png", "tiff", "webp", "jpeg", "gif"] }
 dragonhorde_common = { version = "0.1.0", path = "../dragonhorde_common" }
-sea-query = { version = "0.32.4", features = ["postgres-array", "with-chrono", "with-json"] }
 axum-extra = { version = "0.10.1", features = ["query", "typed-header"] }
 utoipa-axum = "0.2.0"
-utoipa = { version = "5.3.1", features = ["axum_extras", "chrono"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"]}
-chrono = "0.4.41"
+utoipa = { version = "5.4.0", features = ["axum_extras", "chrono"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["axum"]}
+chrono = { version = "0.4.41", features = ["serde"] }
 axum_typed_multipart = "0.16.2"
+sqlx = { version = "0.8.6", default-features = false, features = ["postgres","chrono", "runtime-tokio", "tls-rustls", "macros", "bit-vec", "json"] }
+
+
+[profile.dev.package.image]
+opt-level = 3

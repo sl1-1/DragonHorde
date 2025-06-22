@@ -1,34 +1,36 @@
-use sea_orm::QueryFilter;
-use std::collections::HashSet;
 pub(crate) use crate::api_models::api_creator::{ApiCreator, CreatorsResults};
+use crate::api_models::ApiCreatorResult;
 use crate::error::AppError;
-use crate::{queries, AppState};
+use crate::error::AppError::NotFound;
+use crate::AppState;
 use axum::extract::{Path, State};
 use axum::Json;
-use entity::{creators, creators::Entity as Creators};
-use sea_orm::{ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, FromQueryResult, Set, TransactionTrait};
-use crate::error::AppError::NotFound;
-use entity::{creator_alias, creator_alias::Entity as CreatorAlias};
+use sqlx::types::chrono::FixedOffset;
+use std::collections::HashSet;
 
-
-async fn check_creator(id: i64, db: &DatabaseConnection) -> Result<ApiCreator, AppError> {
-    let mut q = queries::base_creator();
-    q = queries::creator_by_id(q, id);
-    let statement = db.get_database_backend().build(&q);
-    match ApiCreator::find_by_statement(statement).one(db).await?
+async fn check_creator(id: i64, db: &sqlx::PgPool) -> Result<ApiCreatorResult, AppError> {
+    match sqlx::query_file_as!(
+        ApiCreatorResult,
+        "sql/endpoints/creators/get_creators.sqlx",
+        &vec![id][..]
+    )
+    .fetch_optional(db)
+    .await?
     {
         None => Err(NotFound(format!("Creator {} not found", id))),
-        Some(c) => Ok(c)
+        Some(c) => Ok(c),
     }
 }
 
 #[utoipa::path(get, path = "/v1/creators", responses((status = OK, body = CreatorsResults)), tags = ["creators"])]
-pub async fn get_creators(
-    state: State<AppState>,
-) -> Result<Json<CreatorsResults>, AppError> {
-    let q = queries::base_creator();
-    let statement = state.conn.get_database_backend().build(&q);
-    let creators = ApiCreator::find_by_statement(statement).all(&state.conn).await?;
+pub async fn get_creators(state: State<AppState>) -> Result<Json<CreatorsResults>, AppError> {
+    let creators = sqlx::query_file_as!(
+        ApiCreatorResult,
+        "sql/endpoints/creators/get_creators.sqlx",
+        &vec![][..]
+    )
+    .fetch_all(&state.conn)
+    .await?;
     Ok(Json(CreatorsResults { result: creators }))
 }
 
@@ -36,21 +38,27 @@ pub async fn get_creators(
 pub async fn get_creators_id(
     state: State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<ApiCreator>, AppError> {
-    Ok(Json(check_creator(id, &state.conn).await?))
+) -> Result<Json<ApiCreatorResult>, AppError> {
+    Ok(Json(
+        check_creator(id, &state.conn).await?,
+    ))
 }
 
 #[utoipa::path(get, path = "/v1/creators/by_alias/{alias}", responses((status = OK, body = ApiCreator)), tags = ["creators"])]
 pub async fn get_creators_by_alias(
     state: State<AppState>,
     Path(alias): Path<String>,
-) -> Result<Json<ApiCreator>, AppError> {
-    let mut q = queries::base_creator();
-    q = queries::creator_by_alias(q, &alias.to_lowercase());
-    let statement = state.conn.get_database_backend().build(&q);
-    match ApiCreator::find_by_statement(statement).one(&state.conn).await? {
+) -> Result<Json<ApiCreatorResult>, AppError> {
+    match sqlx::query_file_as!(
+        ApiCreatorResult,
+        "sql/endpoints/creators/get_creators_by_alias.sqlx",
+        alias
+    )
+    .fetch_optional(&state.conn)
+    .await?
+    {
         None => Err(NotFound(format!("Creator {} not found", alias))),
-        Some(c) => Ok(Json(c))
+        Some(c) => Ok(Json(c)),
     }
 }
 
@@ -59,41 +67,48 @@ pub async fn patch_creators_id(
     state: State<AppState>,
     Path(id): Path<i64>,
     Json(payload): Json<ApiCreator>,
-) -> Result<Json<ApiCreator>, AppError> {
+) -> Result<Json<ApiCreatorResult>, AppError> {
     let creator = check_creator(id, &state.conn).await?;
 
-    let txn = state.conn.begin().await?;
+    let mut tx = state.conn.begin().await?;
+
+    sqlx::query!(
+        r#"UPDATE creators SET name=$2 WHERE id = $1"#,
+        id,
+        payload.name.unwrap_or(creator.name.unwrap())
+    )
+    .execute(&mut *tx)
+    .await?;
 
     if let Some(aliases) = payload.aliases {
-        let current_aliases: HashSet<String> = HashSet::from_iter(creator.aliases.unwrap().0);
+        let current_aliases: HashSet<String> = HashSet::from_iter(creator.aliases.unwrap());
         let new_aliases: HashSet<String> = HashSet::from_iter(aliases.0);
-        let to_delete: Vec<&String> = current_aliases.difference(&new_aliases).collect();
-        let to_add: Vec<&String> = new_aliases.difference(&current_aliases).collect();
+        let to_delete: Vec<String> = current_aliases
+            .difference(&new_aliases)
+            .map(|i| i.to_string())
+            .collect();
+        let to_add: Vec<String> = new_aliases
+            .difference(&current_aliases)
+            .map(|i| i.to_string())
+            .collect();
         if !to_delete.is_empty() {
-            CreatorAlias::delete_many()
-                .filter(creator_alias::Column::Creator.eq(id))
-                .filter(creator_alias::Column::Alias.is_in(to_delete))
-                .exec(&txn)
+            sqlx::query!(r#"DELETE FROM creator_alias WHERE creator_alias.creator = $1 AND creator_alias.alias = ANY($2)"#, id, &to_delete[..])
+                .execute(&mut *tx)
                 .await?;
         }
         if !to_add.is_empty() {
-            CreatorAlias::insert_many(to_add.into_iter().map(|a| creator_alias::ActiveModel{
-                id: Default::default(),
-                creator: Set(id),
-                alias: Set(a.clone()),
-            })).exec(&txn).await?;
+            sqlx::query!(
+                r#"INSERT INTO creator_alias (creator, alias) VALUES ($1, UNNEST($2::text[]))"#,
+                id,
+                &to_add[..]
+            )
+            .execute(&mut *tx)
+            .await?;
         }
     }
+    tx.commit().await?;
 
-
-    Creators::update( creators::ActiveModel {
-        id: Set(id),
-        name: Set(payload.name.unwrap_or(creator.name.unwrap())),
-        sites: Default::default(),
-        created: Default::default(),
-    }).exec(&state.conn).await?;
-
-    txn.commit().await?;
-
-    Ok(Json(check_creator(id, &state.conn).await?))
+    Ok(Json(
+        check_creator(id, &state.conn).await?,
+    ))
 }

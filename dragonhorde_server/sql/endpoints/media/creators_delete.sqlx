@@ -1,0 +1,10 @@
+DELETE
+FROM media_creators
+WHERE media_id = $1
+  AND NOT creator_id <> ALL (
+    SELECT media_creators.creator_id
+    FROM media_creators
+             LEFT JOIN creator_alias ON creator_alias.creator = creator_id
+    WHERE media_id = $1
+      AND alias <> ALL ($2::varchar[])
+      )

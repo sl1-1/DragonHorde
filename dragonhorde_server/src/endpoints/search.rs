@@ -1,19 +1,16 @@
 use crate::api_models::{
-    ApiCollection, ApiMedia, HashQuery, Pagination, QueryType, SearchQuery,
+    ApiCollectionResult, ApiMediaReturn, HashQuery, Pagination, QueryType, SearchQuery,
     SearchQueryJson, SearchResult,
 };
 use crate::error::AppError;
-use crate::queries::{
-    base_media, distance, media_from_search, search_collection_creator,
-    search_collection_no_creator, search_collections, search_creator, search_hash,
-    search_no_collections, search_no_creator,
-};
-use crate::{AppState, queries};
-use axum::Json;
+use crate::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::Json;
 use axum_extra::extract::Query;
-use sea_orm::{ConnectionTrait, DatabaseConnection, FromQueryResult};
+use chrono::FixedOffset;
+use sqlx::types::BitVec;
+use std::collections::HashMap;
 
 #[utoipa::path(get, path = "/v1/search", params(SearchQuery, Pagination), responses((status = OK, body = SearchResult)), tags = ["search"]
 )]
@@ -22,44 +19,63 @@ pub async fn search_query(
     query: Query<SearchQuery>,
     pagination: Query<Pagination>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
+    let collections_include: Vec<String> = Vec::new();
+    let collections_exclude: Vec<String> = Vec::new();
+    let mut creators_include: Vec<String> = Vec::new();
+    let creators_exclude: Vec<String> = Vec::new();
+    let mut tags_include: Vec<String> = Vec::new();
+    let mut tags_exclude: Vec<String> = Vec::new();
     dbg!(&query);
-    let mut q = queries::base_search_query();
     if !query.tags.is_empty() {
-        let tags: Vec<String> = query
-            .tags
-            .clone()
-            .into_iter()
-            .filter(|x| !x.starts_with('-'))
-            .collect();
-        let blocked: Vec<String> = query
-            .tags
-            .clone()
-            .into_iter()
-            .filter(|x| x.starts_with('-'))
-            .map(|t| t.replacen("-", "", 1))
-            .collect();
-        if !tags.is_empty() {
-            q = queries::search_has_tags(q, tags);
-        }
-        if !blocked.is_empty() {
-            q = queries::search_not_tags(q, blocked);
-        }
+        tags_include.extend(
+            query
+                .tags
+                .clone()
+                .into_iter()
+                .filter(|x| !x.starts_with('-')),
+        );
+        tags_exclude.extend(
+            query
+                .tags
+                .clone()
+                .into_iter()
+                .filter(|x| x.starts_with('-'))
+                .map(|t| t.replacen("-", "", 1)),
+        );
     }
-    if !query.creators.is_empty() {
-        q = search_creator(q, query.creators.clone());
-    }
-    q = queries::pagination(q, pagination.0);
-    let mut media_q = base_media();
-    media_q = media_from_search(media_q, q);
 
-    let statement = state.conn.get_database_backend().build(&media_q);
-    let found_media = ApiMedia::find_by_statement(statement)
-        .all(&state.conn)
-        .await?;
+    creators_include.extend(query.creators.iter().map(|i| i.to_string()));
+
+    let r = sqlx::query_file_scalar!(
+        "sql/endpoints/search/search.sqlx",
+        &creators_include[..],
+        &creators_exclude[..],
+        false,
+        &collections_include[..],
+        &collections_exclude[..],
+        false,
+        &tags_include[..],
+        &tags_exclude[..],
+        false,
+        pagination.per_page.unwrap_or(20).cast_signed(),
+        pagination.last.unwrap_or(0).cast_signed(),
+    )
+    .fetch_all(&state.conn)
+    .await?;
+
+    let perceptual_hash: Option<BitVec> = None;
+
     Ok((
         StatusCode::OK,
         Json(SearchResult {
-            result: found_media,
+            result: sqlx::query_file_as!(
+                ApiMediaReturn,
+                "sql/media_item_get.sqlx",
+                &r[..],
+                perceptual_hash,
+            )
+            .fetch_all(&state.conn)
+            .await?,
             ..Default::default()
         }),
     ))
@@ -70,104 +86,145 @@ async fn query_media(
     creators: Option<Vec<String>>,
     collections: Option<Vec<String>>,
     pagination: Pagination,
-    db: &DatabaseConnection,
-) -> Result<Vec<ApiMedia>, AppError> {
-    let mut q = queries::base_search_query();
-    if let Some(tags) = tags {
-        if tags.is_empty() {
-            let white_list: Vec<String> = tags
-                .clone()
-                .into_iter()
-                .filter(|x| !x.starts_with('-'))
-                .collect();
-            let black_list: Vec<String> = tags
-                .clone()
-                .into_iter()
-                .filter(|x| x.starts_with('-'))
-                .map(|t| t.replacen("-", "", 1))
-                .collect();
-            if !white_list.is_empty() {
-                q = queries::search_has_tags(q, white_list);
-            }
-            if !black_list.is_empty() {
-                q = queries::search_not_tags(q, black_list);
-            }
-        }
-    }
-    if let Some(creators) = creators {
-        if !creators.is_empty() {
-            q = search_creator(q, creators.clone());
-        }
-    } else {
-        q = search_no_creator(q);
-    }
-    //Todo: Make this either support path style names for collections, or only take IDs?
+    db: &sqlx::PgPool,
+) -> Result<Vec<ApiMediaReturn>, AppError> {
+    let mut collections_include: Vec<String> = Vec::new();
+    let mut collections_exclude: Vec<String> = Vec::new();
+    let mut no_collections: bool = false;
+    let mut creators_include: Vec<String> = Vec::new();
+    let mut creators_exclude: Vec<String> = Vec::new();
+    let mut no_creators: bool = false;
+    let mut tags_include: Vec<String> = Vec::new();
+    let mut tags_exclude: Vec<String> = Vec::new();
+    let mut no_tags: bool = false;
+
     if let Some(collections) = collections {
-        if !collections.is_empty() {
-            q = search_collections(q, collections.clone());
-        }
+        collections_include.extend(
+            collections
+                .iter()
+                .filter(|i| !i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+        collections_exclude.extend(
+            collections
+                .iter()
+                .filter(|i| i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
     } else {
-        q = search_no_collections(q);
+        no_collections = true;
     }
 
-    q = queries::pagination(q, pagination);
-    let mut media_q = base_media();
-    media_q = media_from_search(media_q, q);
+    if let Some(creators) = creators {
+        creators_include.extend(
+            creators
+                .iter()
+                .filter(|i| !i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+        creators_exclude.extend(
+            creators
+                .iter()
+                .filter(|i| i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+    } else {
+        no_creators = true;
+    }
 
-    let statement = db.get_database_backend().build(&media_q);
-    Ok(ApiMedia::find_by_statement(statement).all(db).await?)
+    if let Some(tags) = tags {
+        tags_include.extend(
+            tags.iter()
+                .filter(|i| !i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+        tags_exclude.extend(
+            tags.iter()
+                .filter(|i| i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+    } else {
+        no_tags = true;
+    }
+    let r = sqlx::query_file_scalar!(
+        "sql/endpoints/search/search.sqlx",
+        &creators_include[..],
+        &creators_exclude[..],
+        no_creators,
+        &collections_include[..],
+        &collections_exclude[..],
+        no_collections,
+        &tags_include[..],
+        &tags_exclude[..],
+        no_tags,
+        pagination.per_page.unwrap_or(20).cast_signed(),
+        pagination.last.unwrap_or(0).cast_signed(),
+    )
+    .fetch_all(db)
+    .await?;
+
+    let perceptual_hash: Option<BitVec> = None;
+    Ok(sqlx::query_file_as!(
+        ApiMediaReturn,
+        "sql/media_item_get.sqlx",
+        &r[..],
+        perceptual_hash,
+    )
+    .fetch_all(db)
+    .await?)
 }
 
 async fn query_collections(
     tags: Option<Vec<String>>,
     creators: Option<Vec<String>>,
     pagination: Pagination,
-    db: &DatabaseConnection,
-) -> Result<Vec<ApiCollection>, AppError> {
-    let mut q = queries::base_collection();
-    // if let Some(tags) = tags {
-    //     if tags.is_empty() {
-    //         let white_list: Vec<String> = tags
-    //             .clone()
-    //             .into_iter()
-    //             .filter(|x| !x.starts_with('-'))
-    //             .collect();
-    //         let black_list: Vec<String> = tags
-    //             .clone()
-    //             .into_iter()
-    //             .filter(|x| x.starts_with('-'))
-    //             .map(|t| t.replacen("-", "", 1))
-    //             .collect();
-    //         if !white_list.is_empty() {
-    //             q = queries::search_has_tags(q, white_list);
-    //         }
-    //         if !black_list.is_empty() {
-    //             q = queries::search_not_tags(q, black_list);
-    //         }
-    //     }
-    // }
+    db: &sqlx::PgPool,
+) -> Result<Vec<ApiCollectionResult>, AppError> {
+    let mut creators_include: Vec<String> = Vec::new();
+    let mut creators_exclude: Vec<String> = Vec::new();
+    let mut tags_include: Vec<String> = Vec::new();
+    let mut tags_exclude: Vec<String> = Vec::new();
+
     if let Some(creators) = creators {
-        if !creators.is_empty() {
-            q = search_collection_creator(q, creators.clone());
-        }
-    } else {
-        q = search_collection_no_creator(q);
+        creators_include.extend(
+            creators
+                .iter()
+                .filter(|i| !i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+        creators_exclude.extend(
+            creators
+                .iter()
+                .filter(|i| i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
     }
-    // //Todo: Make this either support path style names for collections, or only take IDs?
-    // if let Some(collections) = collections {
-    //     if !collections.is_empty() {
-    //         q = search_collections(q, collections.clone());
-    //     }
-    // } else {
-    //     q = search_no_collections(q);
-    // }
 
-    q = queries::pagination(q, pagination);
-    // let mut media_q = base_media();
-    // media_q = media_from_search(media_q, q);
+    if let Some(tags) = tags {
+        tags_include.extend(
+            tags.iter()
+                .filter(|i| !i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+        tags_exclude.extend(
+            tags.iter()
+                .filter(|i| i.starts_with("-"))
+                .map(|i| i.to_string()),
+        );
+    }
 
-    let statement = db.get_database_backend().build(&q);
-    Ok(ApiCollection::find_by_statement(statement).all(db).await?)
+    Ok(sqlx::query_file_as!(
+        ApiCollectionResult,
+        "sql/endpoints/search/collection.sqlx",
+        &creators_include[..],
+        &creators_exclude[..],
+        &tags_include[..],
+        &tags_exclude[..],
+        pagination.per_page.unwrap_or(20).cast_signed(),
+        pagination.last.unwrap_or(0).cast_signed()
+    )
+    .fetch_all(db)
+    .await?)
 }
 
 #[utoipa::path(post, path = "/v1/search", params(Pagination), request_body = SearchQueryJson, responses((status = OK, body = SearchResult)), tags = ["search"]
@@ -177,8 +234,8 @@ pub async fn search_query_json(
     pagination: Query<Pagination>,
     query: Json<SearchQueryJson>,
 ) -> Result<(StatusCode, Json<SearchResult>), AppError> {
-    let mut media: Vec<ApiMedia> = vec![];
-    let mut collections: Option<Vec<ApiCollection>> = None;
+    let mut media: Vec<ApiMediaReturn> = vec![];
+    let mut collections: Option<Vec<ApiCollectionResult>> = None;
     dbg!(&query);
     match query.query_type {
         QueryType::All => {
@@ -222,7 +279,7 @@ pub async fn search_query_json(
             )
         }
     }
-
+    //
     Ok((
         StatusCode::OK,
         Json(SearchResult {
@@ -240,17 +297,25 @@ pub async fn hash_search(
     query: Query<HashQuery>,
     pagination: Query<Pagination>,
 ) -> Result<Json<SearchResult>, AppError> {
-    dbg!(&query);
-    let mut q = queries::base_search_query();
-    q = search_hash(q, query.hash, query.max_distance);
-    q = queries::pagination(q, pagination.0);
-    let mut media_q = base_media();
-    media_q = media_from_search(media_q, q);
-    media_q = distance(media_q, query.hash);
-    let statement = state.conn.get_database_backend().build(&media_q);
-    let found_media = ApiMedia::find_by_statement(statement)
-        .all(&state.conn)
-        .await?;
+    let r = sqlx::query_file_scalar!(
+        "sql/endpoints/search/hash_search.sqlx",
+        BitVec::from_bytes(&query.hash.to_be_bytes()),
+        query.max_distance.unwrap_or(3) as f64,
+        pagination.per_page.unwrap_or(20).cast_signed(),
+        pagination.last.unwrap_or(0).cast_signed()
+    )
+    .fetch_all(&state.conn)
+    .await?;
+
+    let found_media = sqlx::query_file_as!(
+        ApiMediaReturn,
+        "sql/media_item_get.sqlx",
+        &r[..],
+        BitVec::from_bytes(&query.hash.to_be_bytes()),
+    )
+    .fetch_all(&state.conn)
+    .await?;
+
     Ok(Json(SearchResult {
         result: found_media,
         ..Default::default()

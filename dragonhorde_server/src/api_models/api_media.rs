@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 use chrono::{DateTime, FixedOffset};
 
-use sea_orm::{
-    FromJsonQueryResult, FromQueryResult
-};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
 
 pub(crate) use crate::api_models::{DataMap, DataVector};
-use crate::api_models::{DataMapI64String};
 
 #[skip_serializing_none]
 #[derive(
@@ -18,8 +14,6 @@ use crate::api_models::{DataMapI64String};
     PartialEq,
     Serialize,
     Deserialize,
-    FromQueryResult,
-    FromJsonQueryResult,
 )]
 #[schema(title="MediaItem")]
 pub struct ApiMedia {
@@ -50,9 +44,9 @@ pub struct ApiMedia {
     #[serde(default)]
     pub collections: Option<DataVector>,
     /// Collections this item is in
-    #[schema(value_type = Option<HashMap<i64, String>>)]
-    #[serde(default)]
-    pub collections_with_id: Option<DataMapI64String>,
+    // #[schema(value_type = Option<HashMap<i64, String>>)]
+    // #[serde(default)]
+    // pub collections_with_id: Option<DataMapI64String>,
     #[serde(default)]
     #[schema(value_type = Option<BTreeMap<String, Vec<String>>>)]
     pub tag_groups: Option<DataMap>,
@@ -113,8 +107,8 @@ pub struct ApiMediaReturn {
     /// Description of this item, if available
     pub description: Option<String>,
     ///Distance when searching by perceptual hash
-    // #[schema(read_only)]
-    // pub distance: Option<f64>,
+    #[schema(read_only)]
+    pub distance: Option<f64>,
     #[schema(read_only)]
     pub metadata: Option<serde_json::Value>,
     pub file_type: Option<String>,

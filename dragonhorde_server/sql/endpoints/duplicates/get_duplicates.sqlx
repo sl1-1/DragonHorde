@@ -1,0 +1,5 @@
+SELECT media.id, json_object_agg(media2.id, media.perceptual_hash <~> media2.perceptual_hash) as "duplicates: sqlx::types::Json<HashMap<i64, i64>>"
+FROM media
+         INNER JOIN media media2 on media.perceptual_hash <~> media2.perceptual_hash < $1 and media.id != media2.id and media.id <= media2.id
+GROUP BY media.id
+ORDER BY count(media.perceptual_hash <~> media2.perceptual_hash)

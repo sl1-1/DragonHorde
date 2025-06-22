@@ -1,0 +1,16 @@
+WITH RECURSIVE cte AS (SELECT id, name, parent, created, description, array [name] as path
+                       FROM collections
+                       WHERE parent is null
+                       UNION ALL
+                       SELECT c.id, c.name, c.parent, c.created, c.description, ct.path || c.name
+                       FROM cte ct
+                                JOIN
+                            collections c
+                            ON c.parent = ct.id)
+SELECT collections.id
+FROM collections
+         LEFT JOIN cte ON collections.id = cte.id
+
+WHERE cte.path = $1::varchar[]
+GROUP BY collections.id, cte.path
+ORDER BY cte.path

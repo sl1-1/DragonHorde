@@ -4,13 +4,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use axum_extra::extract::Query;
-use entity::{creators, creators::Entity as Creators, media_collection};
-use entity::{collections, collections::Entity as Collections};
-use entity::media_creators;
-use entity::media_tags;
-use entity::{tags, tags::Entity as Tags};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, RelationTrait};
-use sea_query::{JoinType, Order};
 use serde::{Deserialize, Serialize};
 use std::cmp::PartialEq;
 use utoipa::IntoParams;
@@ -51,7 +44,8 @@ pub struct TagReturn {
     id: i64,
     tag: String,
     #[schema(inline, example=TagType::Tag)]
-    tag_type: TagType
+    tag_type: TagType,
+    tag_group: Option<String>
 }
 
 #[utoipa::path(get, path = "/v1/autocomplete", params(TagQuery), responses((status = OK, body = Vec<TagReturn>)), tags = ["tags"])]
@@ -65,38 +59,34 @@ pub async fn autocomplete(
     let mut combined : Vec<(TagReturn, i64)> = Vec::new();
 
     let tag = match query.tag.split_once(":") {
-        Some(t) => {t.1},
-        None => query.tag.as_str(),
+        Some(t) => {t.1.to_string()},
+        None => query.tag.as_str().to_string(),
     };
 
     if query.tag_type == TagType::All || query.tag_type == TagType::Artist {
-        let creators: Vec<(String, i64)> = Creators::find()
-            .select_only()
-            .column(creators::Column::Name)
-            .column_as(media_creators::Column::MediaId.count(), "count")
-            .filter(creators::Column::Name.starts_with(tag))
-            .join(JoinType::LeftJoin, creators::Relation::MediaCreators.def())
-            .order_by(media_creators::Column::MediaId.count(), Order::Desc)
-            .group_by(creators::Column::Name)
-            .into_tuple()
-            .all(&state.conn).await?;
-        combined.extend(creators.into_iter().map(|(creator, count)| (TagReturn{id: 0, tag: creator, tag_type: TagType::Artist}, count)));
+        let creators: Vec<(String, i64)> = sqlx::query!("SELECT creators.name, count(media_creators.media_id) as count from creators
+           LEFT JOIN media_creators ON creators.id = media_creators.creator_id
+           WHERE name like $1
+           GROUP BY creators.name
+            ORDER BY count(media_creators.media_id)
+                   ", format!("{}%", tag))
+            .fetch_all(&state.conn)
+            .await?
+            .into_iter().map(|i| (i.name, i.count.unwrap())).collect();
+        combined.extend(creators.into_iter().map(|(creator, count)| (TagReturn{id: 0, tag: creator, tag_type: TagType::Artist, tag_group: None}, count)));
     }
 
     if query.tag_type == TagType::All || query.tag_type == TagType::Collection {
-        let collections: Vec<(i64, String, i64)> = Collections::find()
-            .select_only()
-            .column(collections::Column::Id)
-            .column(collections::Column::Name)
-            .column_as(media_collection::Column::MediaId.count(), "count")
-            .filter(collections::Column::Name.starts_with(tag))
-            .join(JoinType::LeftJoin, collections::Relation::MediaCollection.def())
-            .order_by(media_collection::Column::MediaId.count(), Order::Desc)
-            .group_by(collections::Column::Id)
-            .group_by(collections::Column::Name)
-            .into_tuple()
-            .all(&state.conn).await?;
-        combined.extend(collections.into_iter().map(|(id, collection, count)| (TagReturn{id, tag: collection, tag_type: TagType::Collection}, count)));
+        let collections: Vec<(i64, String, i64)> = sqlx::query!("SELECT collections.id, collections.name, count(media_collection.media_id) as count from collections
+           LEFT JOIN media_collection ON collections.id = media_collection.collection_id
+           WHERE name like $1
+           GROUP BY collections.id, collections.name
+            ORDER BY count(media_collection.media_id)
+                   ", format!("{}%", tag))
+            .fetch_all(&state.conn)
+            .await?
+            .into_iter().map(|i| (i.id, i.name, i.count.unwrap())).collect();
+        combined.extend(collections.into_iter().map(|(id, collection, count)| (TagReturn{id, tag: collection, tag_type: TagType::Collection, tag_group: None}, count)));
     }
 
     if query.tag_type == TagType::All || query.tag_type == TagType::Tag {
@@ -106,17 +96,17 @@ pub async fn autocomplete(
             search = search.replacen("-", "", 1);
             neg = true;
         }
-        let tags: Vec<(String, i64)> = Tags::find()
-            .select_only()
-            .column(tags::Column::Tag)
-            .column_as(media_tags::Column::MediaId.count(),  "count")
-            .filter(tags::Column::Tag.starts_with(search))
-            .join(JoinType::LeftJoin, tags::Relation::MediaTags.def())
-            .order_by(media_tags::Column::MediaId.count(), Order::Desc)
-            .group_by(tags::Column::Tag)
-            .into_tuple()
-            .all(&state.conn).await?;
-        combined.extend(tags.into_iter().map(|(t, count)| (TagReturn{id:0, tag: if neg {format!("-{}", t)} else {t}, tag_type:TagType::Tag}, count)));
+        let tags: Vec<(String, String, i64)> = sqlx::query!("SELECT tag, name, count(media_tags.media_id) as count from tags
+           LEFT JOIN media_tags on tags.id = media_tags.tag_id
+           LEFT JOIN tag_groups ON tags.group = tag_groups.id
+           WHERE tag like $1
+           GROUP BY tags.tag, tag_groups.name
+            ORDER BY count(media_tags.media_id)
+                   ", format!("{}%", query.tag.as_str()))
+            .fetch_all(&state.conn)
+            .await?
+            .into_iter().map(|i| (i.tag, i.name, i.count.unwrap())).collect();
+        combined.extend(tags.into_iter().map(|(t,g, count)| (TagReturn{id:0, tag: if neg {format!("-{}", t)} else {t}, tag_type:TagType::Tag, tag_group: Some(g)}, count)));
     }
 
 

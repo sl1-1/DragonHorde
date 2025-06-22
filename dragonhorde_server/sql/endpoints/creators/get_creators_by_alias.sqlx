@@ -1,0 +1,7 @@
+SELECT creators.id, creators.name, creators.created as "created: chrono::DateTime<FixedOffset>",
+       array_agg(DISTINCT creator_alias.alias) FILTER (WHERE creator_alias.creator = creators.id) as aliases
+FROM creators
+         LEFT JOIN creator_alias  ON creators.id = creator_alias.creator
+GROUP BY creators.id
+HAVING $1::text = ANY(array_agg(DISTINCT creator_alias.alias))
+ORDER BY creators.name

@@ -1,0 +1,6 @@
+SELECT media.id
+FROM media
+WHERE perceptual_hash <~> $1::bit(64) < $2
+ORDER BY perceptual_hash <~> $1::bit(64)
+LIMIT $3 OFFSET $4
+

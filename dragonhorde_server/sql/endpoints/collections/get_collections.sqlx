@@ -1,0 +1,36 @@
+WITH RECURSIVE cte AS (SELECT id, name, parent, created, description, array [name] as path
+                       FROM collections
+                       WHERE parent is null
+                       UNION ALL
+                       SELECT c.id, c.name, c.parent, c.created, c.description, ct.path || c.name
+                       FROM cte ct
+                                JOIN
+                            collections c
+                            ON c.parent = ct.id)
+SELECT collections.id,
+       collections.parent,
+       ARRAY_TO_STRING(cte.path, '/', '*')                                                                 AS name,
+       collections.description,
+       collections.created as "created: chrono::DateTime<FixedOffset>",
+       ARRAY_AGG(DISTINCT creators.name) FILTER (WHERE collection_creators.collection_id = collections.id) AS creators,
+       JSON_OBJECT_AGG(t.name, ts)
+       FILTER (WHERE t.collection_id = collections.id)                                                     AS "tag_groups: sqlx::types::Json<HashMap<String, Vec<String>>>",
+       ARRAY_AGG(DISTINCT media_collection.media_id) FILTER (WHERE media_collection.collection_id = collections.id) as "media: Vec<i64>",
+       array_agg(DISTINCT jsonb_build_object('id', child.id, 'created', child.created, 'name', child.name, 'description', child.description, 'parent', child.parent )) FILTER (WHERE child.parent = cte.id) AS "children: Vec<sqlx::types::Json<ApiCollectionResult>>"
+
+FROM collections
+         LEFT JOIN cte ON collections.id = cte.id
+         LEFT JOIN collection_creators ON collection_creators.collection_id = collections.id
+         LEFT JOIN creators ON creators.id = collection_creators.creator_id
+         LEFT JOIN (
+    SELECT collection_tags.collection_id, tag_groups.name, JSON_AGG(tags.tag) AS ts
+    FROM tag_groups
+             LEFT JOIN tags ON tags."group" = tag_groups.id
+             LEFT JOIN collection_tags ON tags.id = collection_tags.tag_id
+    GROUP BY name, collection_tags.collection_id) AS t ON t.collection_id = collections.id
+    LEFT JOIN media_collection on media_collection.collection_id = collections.id
+    LEFT JOIN cte as child on child.parent = collections.id
+
+WHERE (cte.parent IS NULL OR $1) AND (ARRAY_LENGTH($2::bigint[], 1) IS NULL OR collections.id = ANY($2::bigint[]))
+GROUP BY collections.id, cte.path
+ORDER BY cte.path

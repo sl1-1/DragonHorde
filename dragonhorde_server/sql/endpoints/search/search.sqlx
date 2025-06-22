@@ -1,0 +1,105 @@
+-- WITH RECURSIVE cte_collections AS (
+--     SELECT id, name, parent, ARRAY [name] AS path, media_id
+--     FROM collections
+--              LEFT JOIN media_collection ON media_collection.collection_id = collections.id
+--     WHERE parent IS NULL
+--     UNION ALL
+--     SELECT c.id, c.name, c.parent, ct.path || c.name, media_id
+--     FROM cte_collections ct
+--              JOIN
+--          collections c
+--          ON c.parent = ct.id)
+-- SELECT media.id,
+--        media.storage_uri,
+--        media.sha256,
+--        CAST(perceptual_hash AS bigint),
+--        "media"."uploaded" as "uploaded: chrono::DateTime<FixedOffset>",
+--        "media"."created" "created: chrono::DateTime<FixedOffset>",
+--        media.title,
+--        media.description,
+--        media.metadata,
+--        media.type                                                                AS file_type,
+--        ARRAY_REMOVE(ARRAY_AGG(DISTINCT creators.name), NULL)                     AS creators,
+--        ARRAY_REMOVE(ARRAY_AGG(DISTINCT cte_collections.name), NULL)              AS collections,
+--        json_object_agg(DISTINCT cte_collections.id, array_to_string(cte_collections.path, '/', '*'))
+--        FILTER (WHERE cte_collections.media_id = media.id)                                            AS "collections_with_id: sqlx::types::Json<HashMap<String, String>>",
+--        ARRAY_REMOVE(ARRAY_AGG(DISTINCT source), NULL)                            AS sources,
+--        JSON_OBJECT_AGG(DISTINCT t.name, ts) FILTER (WHERE t.media_id = media.id) AS "tag_groups: sqlx::types::Json<HashMap<String, Vec<String>>>",
+--        NULL as "distance: f64"
+-- FROM media
+--          LEFT JOIN media_creators ON media_creators.media_id = media.id
+--          LEFT JOIN creators ON creators.id = media_creators.creator_id
+--          LEFT JOIN cte_collections ON cte_collections.media_id = media.id
+--          LEFT JOIN sources ON sources.media_id = media.id
+--          LEFT JOIN (
+--     SELECT media_tags.media_id, tag_groups.name, ARRAY_AGG(tags.tag) AS ts
+--     FROM tag_groups
+--              LEFT JOIN tags ON tags."group" = tag_groups.id
+--              LEFT JOIN media_tags ON tags.id = media_tags.tag_id
+--     GROUP BY name, media_tags.media_id) AS t ON t.media_id = media.id
+-- WHERE media.id = ANY (
+--     SELECT media.id
+--     FROM media
+--              LEFT JOIN media_creators ON media_creators.media_id = media.id
+--              LEFT JOIN creators ON creators.id = media_creators.creator_id
+--              LEFT JOIN cte_collections ON cte_collections.media_id = media.id
+--              LEFT JOIN media_tags ON media_tags.media_id = media.id
+--              LEFT JOIN tags ON tags.id = media_tags.tag_id
+--     GROUP BY media.id, media_creators.creator_id, cte_collections.id --, tags.tag
+--     HAVING (ARRAY_LENGTH($1::varchar[], 1) IS NULL OR
+--             ARRAY_AGG(creators.name) && $1::text[]) -- Creator Whitelist
+--        AND NOT ARRAY_AGG(creators.name) && $2::text[] -- Creator Blacklist
+--        AND (media_creators.creator_id is NULL OR NOT $3) -- Without any creators
+--        AND (ARRAY_LENGTH($4::varchar[], 1) IS NULL OR
+--             ARRAY_AGG(cte_collections.path) FILTER (WHERE cte_collections.path <> '{}') && $4::varchar[]) -- Collection Whitelist
+--        AND (ARRAY_LENGTH($5::varchar[], 1) IS NULL OR
+--             NOT ARRAY_AGG(cte_collections.path) FILTER (WHERE cte_collections.path <> '{}') && $5::varchar[]) -- Collection Blacklist
+--        AND (cte_collections.id is NULL OR NOT $6) -- Without any collections
+--        AND (ARRAY_LENGTH($7::varchar[], 1) IS NULL OR
+--             ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $7::text[]) -- Tag WhiteList
+--        AND (ARRAY_LENGTH($8::varchar[], 1) IS NULL OR
+--             NOT ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $8::text[]) -- Tag Blacklist
+--        AND (ARRAY_LENGTH(ARRAY_REMOVE(ARRAY_AGG(tags.tag), NULL), 1) is NULL OR NOT $9) -- Without any tags
+--     ORDER BY media.uploaded DESC
+--     LIMIT $10 OFFSET $11)
+-- GROUP BY media.id
+-- ORDER BY media.uploaded DESC;
+
+
+WITH RECURSIVE cte_collections AS (
+    SELECT id, name, parent, ARRAY [name] AS path, media_id
+    FROM collections
+             LEFT JOIN media_collection ON media_collection.collection_id = collections.id
+    WHERE parent IS NULL
+    UNION ALL
+    SELECT c.id, c.name, c.parent, ct.path || c.name, media_id
+    FROM cte_collections ct
+             JOIN
+         collections c
+         ON c.parent = ct.id)
+SELECT media.id
+FROM media
+         LEFT JOIN media_creators ON media_creators.media_id = media.id
+         LEFT JOIN creators ON creators.id = media_creators.creator_id
+         LEFT JOIN cte_collections ON cte_collections.media_id = media.id
+         LEFT JOIN media_tags ON media_tags.media_id = media.id
+         LEFT JOIN tags ON tags.id = media_tags.tag_id
+GROUP BY media.id, media_creators.creator_id, cte_collections.id --, tags.tag
+HAVING (ARRAY_LENGTH($1::varchar[], 1) IS NULL OR
+        ARRAY_AGG(creators.name) && $1::text[])                                     -- Creator Whitelist
+   AND NOT ARRAY_AGG(creators.name) && $2::text[]                                   -- Creator Blacklist
+   AND (media_creators.creator_id IS NULL OR NOT $3)                                -- Without any creators
+   AND (ARRAY_LENGTH($4::varchar[], 1) IS NULL OR
+        ARRAY_AGG(cte_collections.path) FILTER (WHERE cte_collections.path <> '{}') &&
+        $4::varchar[])                                                              -- Collection Whitelist
+   AND (ARRAY_LENGTH($5::varchar[], 1) IS NULL OR
+        NOT ARRAY_AGG(cte_collections.path) FILTER (WHERE cte_collections.path <> '{}') &&
+            $5::varchar[])                                                          -- Collection Blacklist
+   AND (cte_collections.id IS NULL OR NOT $6)                                       -- Without any collections
+   AND (ARRAY_LENGTH($7::varchar[], 1) IS NULL OR
+        ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $7::text[])      -- Tag WhiteList
+   AND (ARRAY_LENGTH($8::varchar[], 1) IS NULL OR
+        NOT ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $8::text[])  -- Tag Blacklist
+   AND (ARRAY_LENGTH(ARRAY_REMOVE(ARRAY_AGG(tags.tag), NULL), 1) IS NULL OR NOT $9) -- Without any tags
+ORDER BY media.uploaded DESC
+LIMIT $10 OFFSET $11

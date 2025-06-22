@@ -1,0 +1,4 @@
+SELECT "creators"."name"
+FROM "media_creators"
+         LEFT JOIN "creators" ON "creators"."id" = "media_creators"."creator_id"
+WHERE "media_creators"."media_id" = $1

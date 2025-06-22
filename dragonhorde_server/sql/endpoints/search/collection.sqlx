@@ -1,0 +1,45 @@
+WITH RECURSIVE cte AS (SELECT id, name, parent, created, description, array [name] as path
+                       FROM collections
+                       WHERE parent is null
+                       UNION ALL
+                       SELECT c.id, c.name, c.parent, c.created, c.description, ct.path || c.name
+                       FROM cte ct
+                                JOIN
+                            collections c
+                            ON c.parent = ct.id)
+        SELECT cte.id,
+               cte.created as "created: chrono::DateTime<FixedOffset>",
+               ARRAY_TO_STRING(cte.path, '/', '*')                                              AS name,
+               cte.description,
+               ARRAY_REMOVE(ARRAY_AGG(DISTINCT creators.name), NULL)                        AS creators,
+               JSON_OBJECT_AGG(DISTINCT t.name, ts)
+               FILTER (WHERE t.collection_id = cte.id)                                      AS "tag_groups: sqlx::types::Json<HashMap<String, Vec<String>>>",
+               ARRAY_REMOVE(ARRAY_AGG(DISTINCT media_collection.media_id), NULL)            AS media,
+               cte.parent,
+               array_agg(DISTINCT jsonb_build_object('id', child.id, 'created', child.created, 'name', child.name, 'description', child.description, 'parent', child.parent )) FILTER (WHERE child.parent = cte.id) AS "children: Vec<sqlx::types::Json<ApiCollectionResult>>"
+
+
+        FROM cte
+                 LEFT JOIN collection_creators ON collection_creators.collection_id = cte.id
+                 LEFT JOIN creators ON creators.id = collection_creators.creator_id
+                 LEFT JOIN collection_tags ON collection_tags.collection_id = cte.id
+                 LEFT JOIN tags ON tags.id = collection_tags.tag_id
+                 LEFT JOIN (
+            SELECT collection_tags.collection_id, tag_groups.name, ARRAY_AGG(tags.tag) AS ts
+            FROM tag_groups
+                     LEFT JOIN tags ON tags."group" = tag_groups.id
+                     LEFT JOIN collection_tags ON tags.id = collection_tags.tag_id
+            GROUP BY name, collection_tags.collection_id) AS t ON t.collection_id = cte.id
+                 LEFT JOIN media_collection ON media_collection.collection_id = cte.id
+        LEFT JOIN cte as child on child.parent = cte.id
+        GROUP BY cte.id, cte.path, cte.created, cte.description, cte.parent
+HAVING (ARRAY_LENGTH($1::varchar[], 1) IS NULL OR
+        ARRAY_AGG(creators.name) && $1::text[])
+   AND NOT ARRAY_AGG(creators.name) && $2::text[]
+   AND (ARRAY_LENGTH($3::varchar[], 1) IS NULL OR
+        ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $3::text[])
+   AND (ARRAY_LENGTH($4::varchar[], 1) IS NULL OR
+        NOT ARRAY_AGG(tags.tag) FILTER (WHERE tags.tag IS NOT NULL) && $4::text[])
+LIMIT $5 OFFSET $6
+
+--     path = array ['kora diner pop']::varchar[]

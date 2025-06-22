@@ -1,0 +1,6 @@
+SELECT "media_tags"."media_id", "tag_groups"."name", ARRAY_AGG("tags"."tag") AS "ts"
+FROM "tag_groups"
+         LEFT JOIN "tags" ON "tags"."group" = "tag_groups"."id"
+         LEFT JOIN "media_tags" ON "tags"."id" = "media_tags"."tag_id"
+WHERE "media_tags".media_id = $1
+GROUP BY "name", "media_tags"."media_id"
